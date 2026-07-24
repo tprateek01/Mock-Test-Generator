@@ -16,7 +16,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 function GlobalStyles() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600;700&family=Pacifico&display=swap');
 
       .mt-root {
         --paper: #FBF8F1;
@@ -207,34 +207,43 @@ function GlobalStyles() {
       }
       .mt-site-header {
         flex-shrink: 0;
-        height: 3.5rem;
+        height: 4.75rem;
         display: flex;
         align-items: center;
-        gap: 0.7rem;
-        padding: 0 1rem;
+        gap: 0.9rem;
+        padding: 0 1.25rem;
         background: var(--paper);
         border-bottom: 1px solid var(--rule);
       }
       .mt-site-header img {
-        height: 2.35rem;
-        width: 2.35rem;
+        height: 3.6rem;
+        width: 3.6rem;
         object-fit: cover;
-        border-radius: 7px;
+        border-radius: 50%;
         flex-shrink: 0;
+        border: 2px solid var(--brass);
+        box-shadow: 0 2px 6px rgba(28,37,65,0.15);
       }
       .mt-site-header .mt-brand-name {
-        font-family: 'Source Serif 4', Georgia, serif;
-        font-weight: 700;
-        font-size: 1.15rem;
-        line-height: 1.1;
-        color: var(--ink);
+        font-family: 'Pacifico', 'Source Serif 4', cursive;
+        font-weight: 400;
+        font-size: 2rem;
+        line-height: 1;
+        letter-spacing: 0.01em;
+        background: linear-gradient(90deg, var(--ink) 0%, var(--brass) 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        display: inline-block;
       }
       .mt-site-header .mt-brand-tag {
-        font-size: 0.62rem;
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-size: 0.66rem;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.12em;
         color: var(--ink-soft);
         font-weight: 600;
+        margin-top: 0.15rem;
       }
       .mt-stage-area {
         flex: 1 1 auto;
