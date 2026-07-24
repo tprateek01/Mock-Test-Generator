@@ -1,0 +1,15 @@
+# Backend
+server/node_modules/
+server/.env
+server/.env.local
+server/*.log
+
+# Frontend (in case its own .gitignore is missing anything)
+mock-test-generator/node_modules/
+mock-test-generator/build/
+
+# Catch-all safety net
+**/node_modules/
+**/.env
+**/.env.local
+*.log

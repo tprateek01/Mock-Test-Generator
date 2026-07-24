@@ -1,0 +1,1300 @@
+import React, { useState, useEffect, useRef, useReducer, useCallback, useMemo } from 'react';
+import mammoth from 'mammoth';
+import {
+  Upload, FileText, Image as ImageIcon, ClipboardPaste, Clock, Flag,
+  ChevronLeft, ChevronRight, AlertTriangle, X, Plus, Trash2, Pencil,
+  Play, RotateCcw, CheckCircle2, Circle, Loader2, ListChecks, Timer,
+  BarChart3, Layers, Settings2, ArrowRight, Check
+} from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+
+/* ============================================================
+   GLOBAL STYLE — "Hall Ticket" design language
+   Paper ivory background, exam-ink navy, brass seal accent,
+   mono digits for the clock, serif for headers.
+   ============================================================ */
+function GlobalStyles() {
+  return (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600;700&display=swap');
+
+      .mt-root {
+        --paper: #FBF8F1;
+        --paper-dim: #F2EDE1;
+        --ink: #1C2541;
+        --ink-soft: #4C567A;
+        --ink-faint: #8A93AE;
+        --rule: #DCD5C2;
+        --brass: #A9822F;
+        --brass-soft: #E8DCB8;
+        --alert: #B23A2E;
+        --alert-soft: #F4DEDA;
+        --answered: #2F6F4E;
+        --answered-soft: #DCEBE1;
+        --review: #6E4C9E;
+        --review-soft: #E7DEF3;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+        min-height: 100%;
+        width: 100%;
+      }
+      .mt-serif { font-family: 'Source Serif 4', Georgia, serif; }
+      .mt-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+      .mt-card {
+        background: #fff;
+        border: 1px solid var(--rule);
+        border-radius: 3px;
+        box-shadow: 0 1px 0 rgba(28,37,65,0.03);
+      }
+      .mt-hairline { border-color: var(--rule); }
+
+      .mt-btn {
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-weight: 600;
+        font-size: 0.875rem;
+        border-radius: 3px;
+        padding: 0.6rem 1.1rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        transition: filter 0.12s ease, transform 0.05s ease;
+        cursor: pointer;
+        border: 1px solid transparent;
+      }
+      .mt-btn:active { transform: translateY(1px); }
+      .mt-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+      .mt-btn-primary { background: var(--ink); color: var(--paper); }
+      .mt-btn-primary:hover:not(:disabled) { filter: brightness(1.15); }
+      .mt-btn-brass { background: var(--brass); color: #fff; }
+      .mt-btn-brass:hover:not(:disabled) { filter: brightness(1.08); }
+      .mt-btn-ghost { background: transparent; color: var(--ink); border-color: var(--rule); }
+      .mt-btn-ghost:hover:not(:disabled) { background: var(--paper-dim); }
+      .mt-btn-danger { background: transparent; color: var(--alert); border-color: var(--alert-soft); }
+      .mt-btn-danger:hover:not(:disabled) { background: var(--alert-soft); }
+      .mt-btn-review { background: var(--review); color: #fff; }
+      .mt-btn-review:hover:not(:disabled) { filter: brightness(1.1); }
+
+      .mt-input, .mt-textarea, .mt-select {
+        font-family: 'IBM Plex Sans', sans-serif;
+        background: #fff;
+        border: 1px solid var(--rule);
+        border-radius: 3px;
+        padding: 0.55rem 0.7rem;
+        font-size: 0.9rem;
+        color: var(--ink);
+        width: 100%;
+      }
+      .mt-input:focus, .mt-textarea:focus, .mt-select:focus {
+        outline: 2px solid var(--brass);
+        outline-offset: 1px;
+        border-color: var(--brass);
+      }
+
+      .mt-label {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ink-soft);
+        font-weight: 600;
+      }
+
+      .mt-seal {
+        width: 2.6rem; height: 2.6rem;
+        border-radius: 999px;
+        border: 1.5px solid var(--brass);
+        display: flex; align-items: center; justify-content: center;
+        color: var(--brass);
+        position: relative;
+        flex-shrink: 0;
+      }
+      .mt-seal::after {
+        content: '';
+        position: absolute; inset: 3px;
+        border-radius: 999px;
+        border: 1px dashed var(--brass);
+        opacity: 0.5;
+      }
+
+      /* OMR-style bubble palette buttons */
+      .mt-bubble {
+        width: 2.5rem; height: 2.5rem;
+        border-radius: 999px;
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'IBM Plex Mono', monospace;
+        font-weight: 600;
+        font-size: 0.85rem;
+        border: 1.5px solid var(--rule);
+        color: var(--ink-soft);
+        background: #fff;
+        cursor: pointer;
+        transition: transform 0.08s ease;
+        position: relative;
+      }
+      .mt-bubble:hover { transform: scale(1.06); }
+      .mt-bubble.current { outline: 2px solid var(--ink); outline-offset: 2px; }
+      .mt-bubble.not-visited { background: #fff; border-color: var(--rule); color: var(--ink-faint); }
+      .mt-bubble.not-answered { background: var(--alert-soft); border-color: var(--alert); color: var(--alert); }
+      .mt-bubble.answered { background: var(--answered); border-color: var(--answered); color: #fff; }
+      .mt-bubble.marked { background: var(--review); border-color: var(--review); color: #fff; }
+      .mt-bubble.answered-marked { background: var(--review); border-color: var(--review); color: #fff; }
+      .mt-bubble.answered-marked::after {
+        content: '';
+        position: absolute; bottom: 2px; right: 2px;
+        width: 7px; height: 7px; border-radius: 999px;
+        background: var(--answered);
+        border: 1.5px solid #fff;
+      }
+      .mt-bubble.locked { opacity: 0.35; cursor: not-allowed; }
+
+      .mt-flip {
+        font-family: 'IBM Plex Mono', monospace;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        font-variant-numeric: tabular-nums;
+      }
+
+      @keyframes mt-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+      .mt-pulse { animation: mt-pulse 1s ease-in-out infinite; }
+
+      .mt-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+      .mt-scrollbar::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 999px; }
+      .mt-scrollbar::-webkit-scrollbar-track { background: transparent; }
+
+      .mt-fade-in { animation: mt-fade-in 0.25s ease both; }
+      @keyframes mt-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+      .mt-radio {
+        width: 1.1rem; height: 1.1rem;
+        border-radius: 999px;
+        border: 1.5px solid var(--rule);
+        flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .mt-radio.checked { border-color: var(--ink); }
+      .mt-radio.checked::after {
+        content: ''; width: 0.55rem; height: 0.55rem; border-radius: 999px; background: var(--ink);
+      }
+
+      .mt-option-row {
+        border: 1px solid var(--rule);
+        border-radius: 3px;
+        padding: 0.65rem 0.8rem;
+        display: flex; align-items: flex-start; gap: 0.7rem;
+        cursor: pointer;
+        transition: border-color 0.1s ease, background 0.1s ease;
+      }
+      .mt-option-row:hover { border-color: var(--ink-faint); }
+      .mt-option-row.selected { border-color: var(--ink); background: var(--paper-dim); }
+    `}</style>
+  );
+}
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+let _id = 0;
+const uid = (p = 'x') => `${p}_${Date.now().toString(36)}_${(_id++).toString(36)}`;
+
+function fmtClock(totalSeconds) {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// In dev, this stays empty and requests go through setupProxy.js to localhost:3001.
+// In production, set REACT_APP_API_BASE to your deployed backend's URL (see deployment notes).
+const API_BASE = process.env.REACT_APP_API_BASE || '';
+
+async function callGemini(contents, systemInstruction, maxTokens = 1000) {
+  const resp = await fetch(`${API_BASE}/api/gemini`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents, systemInstruction: { parts: [{ text: systemInstruction }] }, maxOutputTokens: maxTokens })
+  });
+  if (!resp.ok) throw new Error(`API error ${resp.status}`);
+  const data = await resp.json();
+  const candidate = (data.candidates || [])[0];
+  const parts = (candidate && candidate.content && candidate.content.parts) || [];
+  return parts.map(p => p.text || '').join('\n');
+}
+
+function parseJsonLoose(text) {
+  let t = text.trim();
+  t = t.replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
+  const first = t.indexOf('{');
+  const last = t.lastIndexOf('}');
+  if (first >= 0 && last > first) t = t.slice(first, last + 1);
+  return JSON.parse(t);
+}
+
+const EXTRACTION_SYSTEM = `You extract exam questions from a source document into strict JSON. Output ONLY minified JSON — no markdown fences, no commentary, no preamble.
+
+Schema:
+{"title":"string","sections":[{"name":"string","questions":[{"type":"mcq|numeric|short|descriptive","text":"string","options":["string"]|null,"marks":number,"correctAnswer":"string"|null}]}],"complete":boolean}
+
+Rules:
+- "mcq" = multiple choice with options. "numeric" = requires a numeric answer, no options. "short" = brief word/phrase/one-line answer. "descriptive" = long-form written answer.
+- options: array of option text WITHOUT letter/number labels (e.g. "Paris", not "A) Paris"). Only for mcq, else null.
+- marks: marks stated in the source if present, else default to 1.
+- correctAnswer: fill in ONLY if an answer key is clearly present in the source; for mcq, give the exact option text. Never invent an answer — use null if unsure.
+- Group questions under their section headings exactly as they appear (e.g. "Section A", "Physics", "Part I"). If there are no explicit sections, use one section named "Section 1".
+- Preserve original question order.
+- Your response has a strict token budget. Include as many COMPLETE questions as fit — never cut a question in half. If you reach the budget before finishing the source, stop right after the last complete question and set "complete": false. If you have covered the entire source, set "complete": true.
+- When told to continue, resume immediately after the last question you already sent. Never repeat a question.
+
+Real-world source documents are messy. Handle all of the following without asking for clarification:
+- IGNORE entire pages or blocks that are advertisements, app-download banners, subscription/promo pages, watermarks, logos, or website chrome (e.g. "Download the app", "Get it on Google Play", pricing/subscription tables). These never contain real questions — skip them entirely and continue to the next real question.
+- IGNORE repeating diagonal or tiled watermark text overlaid on the page (e.g. a brand name repeated across the page). It is not question content.
+- If the source is an ANSWER KEY / already-attempted paper where the correct option is marked visually (e.g. a green checkmark/tick, a colored highlight, or bold/colored text) and an incorrect or "selected" option is marked differently (e.g. a red cross), read the VISUAL marking to identify correctAnswer as the option marked correct — do not confuse "the option the candidate chose" with "the correct option" if the source distinguishes them (e.g. a note like "chosen option" vs "correct option"); only extract the CORRECT one into correctAnswer.
+- IGNORE stray numbers or codes that appear detached from question text with no clear label (e.g. a bare number floating next to or inside a question that isn't part of the question's wording, options, or marks) — these are usually leftover layout artifacts (like a candidate's response-id marker) from the original source and must not be included in the question text or treated as an option.
+- If a question references an image, diagram, table, or figure that is essential to answering it (e.g. a Venn diagram, graph, or geometric figure) and the figure's content cannot be captured in text, still extract the question text as-is and set correctAnswer from any visible answer key; do not fabricate a description of the figure.
+- Multi-page PDFs: question numbering continues across pages/sections seamlessly — do not restart numbering or duplicate a question that spans a page break.`;
+
+async function extractQuestions(sourceParts, onProgress) {
+  let contents = [{
+    role: 'user',
+    parts: [...sourceParts, { text: 'Extract all questions from this exam paper into the JSON schema described in the system instructions. Begin with the first question.' }]
+  }];
+  const sections = [];
+  let complete = false;
+  let iterations = 0;
+  let title = 'Mock Test';
+
+  while (!complete && iterations < 20) {
+    iterations++;
+    const raw = await callGemini(contents, EXTRACTION_SYSTEM, 1000);
+    let parsed;
+    try {
+      parsed = parseJsonLoose(raw);
+    } catch (e) {
+      contents = [...contents, { role: 'model', parts: [{ text: raw }] }, { role: 'user', parts: [{ text: 'That was not valid JSON. Resend ONLY valid minified JSON matching the schema, nothing else.' }] }];
+      continue;
+    }
+    if (parsed.title) title = parsed.title;
+    (parsed.sections || []).forEach(sec => {
+      let existing = sections.find(s => s.name === sec.name);
+      if (!existing) { existing = { id: uid('sec'), name: sec.name, questions: [] }; sections.push(existing); }
+      (sec.questions || []).forEach(q => {
+        existing.questions.push({
+          id: uid('q'),
+          type: ['mcq', 'numeric', 'short', 'descriptive'].includes(q.type) ? q.type : 'short',
+          text: q.text || '',
+          options: q.type === 'mcq' && Array.isArray(q.options) ? q.options : null,
+          marks: typeof q.marks === 'number' && q.marks > 0 ? q.marks : 1,
+          correctAnswer: q.correctAnswer || null
+        });
+      });
+    });
+    onProgress && onProgress(sections.reduce((n, s) => n + s.questions.length, 0));
+    complete = !!parsed.complete;
+    if (!complete) {
+      contents = [...contents, { role: 'model', parts: [{ text: raw }] }, { role: 'user', parts: [{ text: 'Continue extracting the next batch of questions, same JSON schema. Do not repeat questions already sent.' }] }];
+    }
+  }
+  return { title, sections };
+}
+
+/* ============================================================
+   SCREEN 1 — UPLOAD
+   ============================================================ */
+function UploadScreen({ onExtracted }) {
+  const [mode, setMode] = useState('file'); // 'file' | 'paste'
+  const [pastedText, setPastedText] = useState('');
+  const [file, setFile] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [status, setStatus] = useState('idle'); // idle | working | error
+  const [progressCount, setProgressCount] = useState(0);
+  const [error, setError] = useState('');
+  const inputRef = useRef(null);
+
+  const acceptExt = '.txt,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp';
+
+  const handleFiles = (files) => {
+    if (files && files[0]) { setFile(files[0]); setMode('file'); }
+  };
+
+  const startBlank = () => {
+    onExtracted({ title: 'Untitled Mock Test', sections: [{ id: uid('sec'), name: 'Section 1', questions: [] }] });
+  };
+
+  const run = async () => {
+    setError('');
+    setStatus('working');
+    setProgressCount(0);
+    try {
+      let sourceParts;
+      if (mode === 'paste') {
+        if (!pastedText.trim()) throw new Error('Paste some question text first.');
+        sourceParts = [{ text: pastedText }];
+      } else {
+        if (!file) throw new Error('Choose a file first.');
+        const name = file.name.toLowerCase();
+        if (name.endsWith('.docx') || name.endsWith('.doc')) {
+          const buf = await file.arrayBuffer();
+          const result = await mammoth.extractRawText({ arrayBuffer: buf });
+          sourceParts = [{ text: result.value }];
+        } else if (name.endsWith('.pdf')) {
+          const b64 = await fileToBase64(file);
+          sourceParts = [{ inlineData: { mimeType: 'application/pdf', data: b64 } }];
+        } else if (name.endsWith('.txt')) {
+          const text = await file.text();
+          sourceParts = [{ text }];
+        } else {
+          const b64 = await fileToBase64(file);
+          const mediaType = file.type || 'image/png';
+          sourceParts = [{ inlineData: { mimeType: mediaType, data: b64 } }];
+        }
+      }
+      const paper = await extractQuestions(sourceParts, (n) => setProgressCount(n));
+      if (!paper.sections.length || !paper.sections.some(s => s.questions.length)) {
+        throw new Error('No questions could be found in that source. Try another file, or start blank and add questions manually.');
+      }
+      onExtracted(paper);
+    } catch (e) {
+      setError(e.message || 'Something went wrong while reading that paper.');
+      setStatus('error');
+    }
+  };
+
+  if (status === 'working') {
+    return (
+      <div className="min-h-full flex items-center justify-center p-6">
+        <div className="mt-card mt-fade-in p-10 max-w-md w-full text-center">
+          <Loader2 className="w-8 h-8 mx-auto mb-4 animate-spin" style={{ color: 'var(--brass)' }} />
+          <div className="mt-serif text-lg font-semibold mb-1">Reading the paper…</div>
+          <div className="text-sm" style={{ color: 'var(--ink-soft)' }}>
+            {progressCount > 0 ? `${progressCount} question${progressCount === 1 ? '' : 's'} extracted so far` : 'Scanning for questions and sections'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-full p-6 md:p-10 flex justify-center">
+      <div className="w-full max-w-2xl mt-fade-in">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="mt-seal"><ListChecks size={18} /></div>
+          <div>
+            <div className="mt-serif text-2xl font-semibold leading-tight">Mock Test Hall</div>
+            <div className="text-sm" style={{ color: 'var(--ink-soft)' }}>Turn any paper into a timed, proctored mock test</div>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mb-4">
+          <button className="mt-btn" style={mode === 'file' ? { background: 'var(--ink)', color: 'var(--paper)' } : { background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--rule)' }} onClick={() => setMode('file')}>
+            <Upload size={15} /> Upload file
+          </button>
+          <button className="mt-btn" style={mode === 'paste' ? { background: 'var(--ink)', color: 'var(--paper)' } : { background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--rule)' }} onClick={() => setMode('paste')}>
+            <ClipboardPaste size={15} /> Paste text
+          </button>
+        </div>
+
+        {mode === 'file' ? (
+          <div
+            className="mt-card p-8 text-center cursor-pointer"
+            style={{ borderStyle: 'dashed', borderColor: dragOver ? 'var(--brass)' : 'var(--rule)', background: dragOver ? 'var(--paper-dim)' : '#fff' }}
+            onClick={() => inputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+          >
+            <input ref={inputRef} type="file" accept={acceptExt} className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+            {file ? (
+              <div className="flex flex-col items-center gap-2">
+                <FileText size={28} style={{ color: 'var(--brass)' }} />
+                <div className="font-medium text-sm">{file.name}</div>
+                <div className="text-xs" style={{ color: 'var(--ink-faint)' }}>{(file.size / 1024).toFixed(0)} KB — click to replace</div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <Upload size={28} style={{ color: 'var(--ink-faint)' }} />
+                <div className="font-medium text-sm">Drop a paper here, or click to browse</div>
+                <div className="text-xs" style={{ color: 'var(--ink-faint)' }}>PDF, Word (.docx), image, or plain text</div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <textarea
+            className="mt-textarea mt-scrollbar"
+            rows={10}
+            placeholder="Paste the question paper text here…"
+            value={pastedText}
+            onChange={(e) => setPastedText(e.target.value)}
+          />
+        )}
+
+        {error && (
+          <div className="mt-3 flex items-start gap-2 text-sm p-3 rounded" style={{ background: 'var(--alert-soft)', color: 'var(--alert)' }}>
+            <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between mt-6">
+          <button className="mt-btn mt-btn-ghost" onClick={startBlank}>
+            <Pencil size={15} /> Start blank instead
+          </button>
+          <button className="mt-btn mt-btn-brass" onClick={run} disabled={mode === 'file' ? !file : !pastedText.trim()}>
+            Extract questions <ArrowRight size={15} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   SCREEN 2 — REVIEW / EDIT EXTRACTED PAPER
+   ============================================================ */
+function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
+  const totalQ = paper.sections.reduce((n, s) => n + s.questions.length, 0);
+
+  const updateTitle = (title) => setPaper({ ...paper, title });
+
+  const updateSection = (sIdx, patch) => {
+    const sections = paper.sections.slice();
+    sections[sIdx] = { ...sections[sIdx], ...patch };
+    setPaper({ ...paper, sections });
+  };
+  const removeSection = (sIdx) => {
+    const sections = paper.sections.slice();
+    sections.splice(sIdx, 1);
+    setPaper({ ...paper, sections });
+  };
+  const addSection = () => {
+    setPaper({ ...paper, sections: [...paper.sections, { id: uid('sec'), name: `Section ${paper.sections.length + 1}`, questions: [] }] });
+  };
+
+  const updateQuestion = (sIdx, qIdx, patch) => {
+    const sections = paper.sections.slice();
+    const questions = sections[sIdx].questions.slice();
+    questions[qIdx] = { ...questions[qIdx], ...patch };
+    sections[sIdx] = { ...sections[sIdx], questions };
+    setPaper({ ...paper, sections });
+  };
+  const removeQuestion = (sIdx, qIdx) => {
+    const sections = paper.sections.slice();
+    const questions = sections[sIdx].questions.slice();
+    questions.splice(qIdx, 1);
+    sections[sIdx] = { ...sections[sIdx], questions };
+    setPaper({ ...paper, sections });
+  };
+  const addQuestion = (sIdx) => {
+    const sections = paper.sections.slice();
+    const q = { id: uid('q'), type: 'mcq', text: '', options: ['', '', '', ''], marks: 1, correctAnswer: null };
+    sections[sIdx] = { ...sections[sIdx], questions: [...sections[sIdx].questions, q] };
+    setPaper({ ...paper, sections });
+  };
+
+  return (
+    <div className="min-h-full p-6 md:p-10 flex justify-center">
+      <div className="w-full max-w-3xl mt-fade-in pb-24">
+        <div className="mb-6">
+          <div className="mt-label mb-1">Paper title</div>
+          <input className="mt-input mt-serif text-lg font-semibold" value={paper.title} onChange={(e) => updateTitle(e.target.value)} />
+          <div className="text-sm mt-2" style={{ color: 'var(--ink-soft)' }}>{paper.sections.length} section{paper.sections.length === 1 ? '' : 's'} · {totalQ} question{totalQ === 1 ? '' : 's'} — check these over before you set the clock.</div>
+        </div>
+
+        <div className="space-y-6">
+          {paper.sections.map((sec, sIdx) => (
+            <div key={sec.id} className="mt-card p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <input className="mt-input mt-serif font-semibold flex-1" value={sec.name} onChange={(e) => updateSection(sIdx, { name: e.target.value })} />
+                <button className="mt-btn mt-btn-danger" onClick={() => removeSection(sIdx)} title="Remove section"><Trash2 size={14} /></button>
+              </div>
+
+              <div className="space-y-4">
+                {sec.questions.map((q, qIdx) => (
+                  <QuestionEditRow
+                    key={q.id}
+                    q={q}
+                    index={qIdx}
+                    onChange={(patch) => updateQuestion(sIdx, qIdx, patch)}
+                    onRemove={() => removeQuestion(sIdx, qIdx)}
+                  />
+                ))}
+              </div>
+
+              <button className="mt-btn mt-btn-ghost mt-3" onClick={() => addQuestion(sIdx)}>
+                <Plus size={14} /> Add question
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button className="mt-btn mt-btn-ghost mt-4" onClick={addSection}>
+          <Plus size={14} /> Add section
+        </button>
+
+        <div className="fixed bottom-0 left-0 right-0 border-t mt-hairline p-4 flex items-center justify-between" style={{ background: 'var(--paper)' }}>
+          <div className="max-w-3xl w-full mx-auto flex items-center justify-between">
+            <button className="mt-btn mt-btn-ghost" onClick={onBack}><ChevronLeft size={15} /> Back</button>
+            <button className="mt-btn mt-btn-brass" disabled={totalQ === 0} onClick={onContinue}>
+              Set up timing <ArrowRight size={15} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuestionEditRow({ q, index, onChange, onRemove }) {
+  const updateOption = (i, val) => {
+    const options = (q.options || []).slice();
+    options[i] = val;
+    onChange({ options });
+  };
+  const addOption = () => onChange({ options: [...(q.options || []), ''] });
+  const removeOption = (i) => {
+    const options = (q.options || []).slice();
+    options.splice(i, 1);
+    onChange({ options });
+  };
+
+  return (
+    <div className="border rounded p-3" style={{ borderColor: 'var(--rule)' }}>
+      <div className="flex items-start gap-2 mb-2">
+        <span className="mt-mono text-xs pt-2" style={{ color: 'var(--ink-faint)' }}>Q{index + 1}</span>
+        <textarea className="mt-textarea flex-1" rows={2} placeholder="Question text" value={q.text} onChange={(e) => onChange({ text: e.target.value })} />
+        <button className="mt-btn mt-btn-danger" onClick={onRemove} title="Remove question"><Trash2 size={13} /></button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 mb-2 pl-7">
+        <select className="mt-select w-auto" value={q.type} onChange={(e) => onChange({ type: e.target.value, options: e.target.value === 'mcq' ? (q.options && q.options.length ? q.options : ['', '', '', '']) : null })}>
+          <option value="mcq">Multiple choice</option>
+          <option value="numeric">Numeric answer</option>
+          <option value="short">Short answer</option>
+          <option value="descriptive">Descriptive</option>
+        </select>
+        <label className="text-xs flex items-center gap-1" style={{ color: 'var(--ink-soft)' }}>
+          Marks
+          <input type="number" min={0} step={0.5} className="mt-input w-16" value={q.marks} onChange={(e) => onChange({ marks: parseFloat(e.target.value) || 0 })} />
+        </label>
+      </div>
+
+      {q.type === 'mcq' && (
+        <div className="pl-7 space-y-1.5 mb-2">
+          {(q.options || []).map((opt, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <button
+                className="mt-radio flex-shrink-0"
+                style={q.correctAnswer === opt && opt ? { borderColor: 'var(--answered)' } : {}}
+                onClick={() => onChange({ correctAnswer: opt })}
+                title="Mark as correct answer"
+              >
+                {q.correctAnswer === opt && opt ? <Check size={11} style={{ color: 'var(--answered)' }} /> : null}
+              </button>
+              <input className="mt-input flex-1" placeholder={`Option ${i + 1}`} value={opt} onChange={(e) => updateOption(i, e.target.value)} />
+              <button className="text-xs" style={{ color: 'var(--ink-faint)' }} onClick={() => removeOption(i)}><X size={13} /></button>
+            </div>
+          ))}
+          <button className="text-xs mt-1" style={{ color: 'var(--brass)' }} onClick={addOption}>+ add option</button>
+        </div>
+      )}
+      {(q.type === 'numeric' || q.type === 'short') && (
+        <div className="pl-7">
+          <input className="mt-input" placeholder="Correct answer (optional, for auto-scoring)" value={q.correctAnswer || ''} onChange={(e) => onChange({ correctAnswer: e.target.value })} />
+        </div>
+      )}
+      {q.type === 'descriptive' && (
+        <div className="pl-7">
+          <input className="mt-input" placeholder="Model / reference answer (optional)" value={q.correctAnswer || ''} onChange={(e) => onChange({ correctAnswer: e.target.value })} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   SCREEN 3 — CONFIGURE TIMING
+   ============================================================ */
+function ConfigureScreen({ paper, onBack, onStart }) {
+  const totalQ = paper.sections.reduce((n, s) => n + s.questions.length, 0);
+  const [totalMinutes, setTotalMinutes] = useState(Math.max(10, totalQ * 2));
+  const [useSectionTiming, setUseSectionTiming] = useState(paper.sections.length > 1);
+  const [sectionMinutes, setSectionMinutes] = useState(() => {
+    const per = {};
+    paper.sections.forEach(s => { per[s.id] = Math.max(5, Math.round((s.questions.length / Math.max(1, totalQ)) * Math.max(10, totalQ * 2))); });
+    return per;
+  });
+  const [useQuestionTiming, setUseQuestionTiming] = useState(false);
+  const [questionSeconds, setQuestionSeconds] = useState(90);
+  const [negativeMarking, setNegativeMarking] = useState(0);
+
+  const sectionSum = paper.sections.reduce((n, s) => n + (sectionMinutes[s.id] || 0), 0);
+
+  return (
+    <div className="min-h-full p-6 md:p-10 flex justify-center">
+      <div className="w-full max-w-2xl mt-fade-in pb-24">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="mt-seal"><Timer size={18} /></div>
+          <div>
+            <div className="mt-serif text-2xl font-semibold leading-tight">Set the clock</div>
+            <div className="text-sm" style={{ color: 'var(--ink-soft)' }}>{paper.title} — {totalQ} questions</div>
+          </div>
+        </div>
+
+        <div className="mt-card p-5 mb-4">
+          <div className="mt-label mb-2">Total test duration</div>
+          <div className="flex items-center gap-3">
+            <input type="number" min={1} className="mt-input w-28" value={totalMinutes} onChange={(e) => setTotalMinutes(parseInt(e.target.value) || 0)} />
+            <span className="text-sm" style={{ color: 'var(--ink-soft)' }}>minutes — the exam auto-submits when this reaches zero</span>
+          </div>
+        </div>
+
+        <div className="mt-card p-5 mb-4">
+          <label className="flex items-center gap-2 cursor-pointer mb-3">
+            <input type="checkbox" checked={useSectionTiming} onChange={(e) => setUseSectionTiming(e.target.checked)} />
+            <span className="mt-label">Per-section time limits</span>
+          </label>
+          {useSectionTiming && (
+            <div className="space-y-2 pl-6">
+              {paper.sections.map(s => (
+                <div key={s.id} className="flex items-center gap-3">
+                  <span className="text-sm flex-1">{s.name} <span style={{ color: 'var(--ink-faint)' }}>({s.questions.length} q)</span></span>
+                  <input type="number" min={1} className="mt-input w-20" value={sectionMinutes[s.id] || 0} onChange={(e) => setSectionMinutes({ ...sectionMinutes, [s.id]: parseInt(e.target.value) || 0 })} />
+                  <span className="text-xs" style={{ color: 'var(--ink-faint)' }}>min</span>
+                </div>
+              ))}
+              <div className="text-xs pt-1" style={{ color: sectionSum > totalMinutes ? 'var(--alert)' : 'var(--ink-faint)' }}>
+                Sections total {sectionSum} min {sectionSum > totalMinutes ? '— exceeds total duration' : `of ${totalMinutes} min`}. Once a section's time runs out it locks and the test moves on.
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-card p-5 mb-4">
+          <label className="flex items-center gap-2 cursor-pointer mb-3">
+            <input type="checkbox" checked={useQuestionTiming} onChange={(e) => setUseQuestionTiming(e.target.checked)} />
+            <span className="mt-label">Per-question time limit</span>
+          </label>
+          {useQuestionTiming && (
+            <div className="flex items-center gap-3 pl-6">
+              <input type="number" min={5} className="mt-input w-24" value={questionSeconds} onChange={(e) => setQuestionSeconds(parseInt(e.target.value) || 0)} />
+              <span className="text-sm" style={{ color: 'var(--ink-soft)' }}>seconds per question — auto-advances when it hits zero</span>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-card p-5 mb-4">
+          <div className="mt-label mb-2">Negative marking</div>
+          <div className="flex items-center gap-3">
+            <input type="number" min={0} step={0.25} className="mt-input w-24" value={negativeMarking} onChange={(e) => setNegativeMarking(parseFloat(e.target.value) || 0)} />
+            <span className="text-sm" style={{ color: 'var(--ink-soft)' }}>marks deducted for each wrong objective answer (0 = off)</span>
+          </div>
+        </div>
+
+        <div className="fixed bottom-0 left-0 right-0 border-t mt-hairline p-4" style={{ background: 'var(--paper)' }}>
+          <div className="max-w-2xl w-full mx-auto flex items-center justify-between">
+            <button className="mt-btn mt-btn-ghost" onClick={onBack}><ChevronLeft size={15} /> Back</button>
+            <button
+              className="mt-btn mt-btn-brass"
+              onClick={() => onStart({
+                totalMinutes, useSectionTiming, sectionMinutes, useQuestionTiming, questionSeconds, negativeMarking
+              })}
+            >
+              <Play size={15} /> Begin mock test
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   SCREEN 4 — LIVE TEST (reducer-driven)
+   ============================================================ */
+function buildFlatQuestions(paper) {
+  const flat = [];
+  paper.sections.forEach((sec, sIdx) => {
+    sec.questions.forEach(q => flat.push({ ...q, sectionId: sec.id, sectionName: sec.name, sectionIndex: sIdx }));
+  });
+  return flat;
+}
+
+function initTestState(paper, config) {
+  const flatQuestions = buildFlatQuestions(paper);
+  const sectionRemaining = {};
+  paper.sections.forEach(s => { sectionRemaining[s.id] = (config.sectionMinutes[s.id] || 0) * 60; });
+  const status = {};
+  if (flatQuestions[0]) status[flatQuestions[0].id] = 'not-answered';
+  return {
+    paper, config, flatQuestions,
+    answers: {}, status, timeSpent: {},
+    currentIndex: 0,
+    overallRemaining: config.totalMinutes * 60,
+    sectionRemaining,
+    questionRemaining: config.useQuestionTiming ? config.questionSeconds : null,
+    lockedSections: {},
+    finished: false,
+    startedAt: Date.now()
+  };
+}
+
+function firstUnlockedIndexFrom(state, fromIndex, dir = 1) {
+  const n = state.flatQuestions.length;
+  let i = fromIndex;
+  while (i >= 0 && i < n) {
+    const q = state.flatQuestions[i];
+    if (!state.lockedSections[q.sectionId]) return i;
+    i += dir;
+  }
+  return -1;
+}
+
+function visit(status, qid) {
+  if (!status[qid]) return { ...status, [qid]: 'not-answered' };
+  return status;
+}
+
+function testReducer(state, action) {
+  switch (action.type) {
+    case 'SELECT_ANSWER': {
+      const qid = state.flatQuestions[state.currentIndex].id;
+      const cur = state.status[qid];
+      const nextStatus = cur === 'marked' || cur === 'answered-marked' ? 'answered-marked' : 'answered';
+      return { ...state, answers: { ...state.answers, [qid]: action.value }, status: { ...state.status, [qid]: nextStatus } };
+    }
+    case 'CLEAR': {
+      const qid = state.flatQuestions[state.currentIndex].id;
+      const cur = state.status[qid];
+      const answers = { ...state.answers };
+      delete answers[qid];
+      const nextStatus = cur === 'answered-marked' ? 'marked' : 'not-answered';
+      return { ...state, answers, status: { ...state.status, [qid]: nextStatus } };
+    }
+    case 'TOGGLE_MARK': {
+      const qid = state.flatQuestions[state.currentIndex].id;
+      const cur = state.status[qid];
+      const hasAnswer = state.answers[qid] !== undefined && state.answers[qid] !== '';
+      let nextStatus;
+      if (cur === 'marked' || cur === 'answered-marked') nextStatus = hasAnswer ? 'answered' : 'not-answered';
+      else nextStatus = hasAnswer ? 'answered-marked' : 'marked';
+      return { ...state, status: { ...state.status, [qid]: nextStatus } };
+    }
+    case 'GOTO': {
+      const idx = action.index;
+      const q = state.flatQuestions[idx];
+      if (!q || state.lockedSections[q.sectionId]) return state;
+      return { ...state, currentIndex: idx, status: visit(state.status, q.id), questionRemaining: state.config.useQuestionTiming ? state.config.questionSeconds : null };
+    }
+    case 'NEXT': {
+      let idx = firstUnlockedIndexFrom(state, state.currentIndex + 1, 1);
+      if (idx === -1) idx = state.currentIndex;
+      const q = state.flatQuestions[idx];
+      return { ...state, currentIndex: idx, status: visit(state.status, q.id), questionRemaining: state.config.useQuestionTiming ? state.config.questionSeconds : null };
+    }
+    case 'PREV': {
+      let idx = firstUnlockedIndexFrom(state, state.currentIndex - 1, -1);
+      if (idx === -1) idx = state.currentIndex;
+      const q = state.flatQuestions[idx];
+      return { ...state, currentIndex: idx, status: visit(state.status, q.id), questionRemaining: state.config.useQuestionTiming ? state.config.questionSeconds : null };
+    }
+    case 'TICK': {
+      if (state.finished) return state;
+      const q = state.flatQuestions[state.currentIndex];
+      const overallRemaining = state.overallRemaining - 1;
+      const timeSpent = { ...state.timeSpent, [q.id]: (state.timeSpent[q.id] || 0) + 1 };
+
+      if (overallRemaining <= 0) {
+        return { ...state, overallRemaining: 0, timeSpent, finished: true };
+      }
+
+      let sectionRemaining = state.sectionRemaining;
+      let lockedSections = state.lockedSections;
+      let currentIndex = state.currentIndex;
+      let questionRemaining = state.questionRemaining;
+      let status = state.status;
+      let finished = false;
+
+      if (state.config.useSectionTiming) {
+        const secLeft = (state.sectionRemaining[q.sectionId] ?? 0) - 1;
+        sectionRemaining = { ...state.sectionRemaining, [q.sectionId]: Math.max(0, secLeft) };
+        if (secLeft <= 0) {
+          lockedSections = { ...state.lockedSections, [q.sectionId]: true };
+          const nextIdx = firstUnlockedIndexFrom({ ...state, lockedSections }, state.currentIndex + 1, 1);
+          if (nextIdx === -1) {
+            finished = true;
+          } else {
+            currentIndex = nextIdx;
+            status = visit(status, state.flatQuestions[nextIdx].id);
+            questionRemaining = state.config.useQuestionTiming ? state.config.questionSeconds : null;
+          }
+        }
+      }
+
+      if (!finished && state.config.useQuestionTiming && questionRemaining !== null) {
+        const qLeft = questionRemaining - 1;
+        if (qLeft <= 0) {
+          const nextIdx = firstUnlockedIndexFrom({ ...state, lockedSections }, currentIndex + 1, 1);
+          if (nextIdx !== -1 && nextIdx !== currentIndex) {
+            currentIndex = nextIdx;
+            status = visit(status, state.flatQuestions[nextIdx].id);
+            questionRemaining = state.config.questionSeconds;
+          } else {
+            questionRemaining = 0;
+          }
+        } else {
+          questionRemaining = qLeft;
+        }
+      }
+
+      return { ...state, overallRemaining, timeSpent, sectionRemaining, lockedSections, currentIndex, questionRemaining, status, finished };
+    }
+    case 'SUBMIT':
+      return { ...state, finished: true };
+    default:
+      return state;
+  }
+}
+
+function TestScreen({ paper, config, onFinish }) {
+  const [state, dispatch] = useReducer(testReducer, undefined, () => initTestState(paper, config));
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [showPaletteMobile, setShowPaletteMobile] = useState(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  useEffect(() => {
+    const interval = setInterval(() => dispatch({ type: 'TICK' }), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (state.finished) {
+      onFinish(state);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.finished]);
+
+  const q = state.flatQuestions[state.currentIndex];
+  const answer = state.answers[q.id];
+  const isLocked = state.lockedSections[q.sectionId];
+
+  const overallCritical = state.overallRemaining <= 60;
+  const sectionCritical = state.config.useSectionTiming && (state.sectionRemaining[q.sectionId] ?? 0) <= 30;
+
+  const counts = useMemo(() => {
+    const c = { answered: 0, notAnswered: 0, marked: 0, notVisited: 0 };
+    state.flatQuestions.forEach(fq => {
+      const st = state.status[fq.id];
+      if (st === 'answered' || st === 'answered-marked') c.answered++;
+      else if (st === 'marked') c.marked++;
+      else if (st === 'not-answered') c.notAnswered++;
+      else c.notVisited++;
+    });
+    return c;
+  }, [state.status, state.flatQuestions]);
+
+  const sectionsForPalette = paper.sections;
+
+  return (
+    <div className="min-h-full flex flex-col">
+      {/* Header */}
+      <div className="border-b mt-hairline px-4 md:px-6 py-3 flex items-center justify-between gap-3" style={{ background: '#fff' }}>
+        <div className="min-w-0">
+          <div className="mt-serif font-semibold text-sm md:text-base truncate">{paper.title}</div>
+          <div className="text-xs" style={{ color: 'var(--ink-soft)' }}>{q.sectionName} · Q{state.currentIndex + 1} of {state.flatQuestions.length}</div>
+        </div>
+        <div className="flex items-center gap-4 flex-shrink-0">
+          {state.config.useSectionTiming && (
+            <div className="text-right hidden sm:block">
+              <div className="mt-label" style={{ fontSize: '0.62rem' }}>Section</div>
+              <div className={`mt-flip mt-mono text-sm ${sectionCritical ? 'mt-pulse' : ''}`} style={{ color: sectionCritical ? 'var(--alert)' : 'var(--ink)' }}>
+                {fmtClock(state.sectionRemaining[q.sectionId] ?? 0)}
+              </div>
+            </div>
+          )}
+          <div className="text-right">
+            <div className="mt-label" style={{ fontSize: '0.62rem' }}>Time left</div>
+            <div className={`mt-flip mt-mono text-xl ${overallCritical ? 'mt-pulse' : ''}`} style={{ color: overallCritical ? 'var(--alert)' : 'var(--ink)' }}>
+              {fmtClock(state.overallRemaining)}
+            </div>
+          </div>
+          <button className="mt-btn mt-btn-ghost lg:hidden" onClick={() => setShowPaletteMobile(true)}><Layers size={16} /></button>
+        </div>
+      </div>
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* Main question panel */}
+        <div className="flex-1 overflow-y-auto mt-scrollbar p-5 md:p-8">
+          <div className="max-w-2xl mx-auto">
+            {isLocked && (
+              <div className="mb-4 flex items-center gap-2 text-sm p-3 rounded" style={{ background: 'var(--alert-soft)', color: 'var(--alert)' }}>
+                <AlertTriangle size={16} /> This section's time is up. Your response is locked in.
+              </div>
+            )}
+            {state.config.useQuestionTiming && !isLocked && (
+              <div className="mb-4 flex items-center gap-2 text-xs" style={{ color: 'var(--ink-soft)' }}>
+                <Clock size={13} />
+                <span>{fmtClock(state.questionRemaining ?? 0)} left on this question</span>
+                <div className="flex-1 h-1 rounded" style={{ background: 'var(--rule)' }}>
+                  <div className="h-1 rounded" style={{ width: `${Math.max(0, Math.min(100, ((state.questionRemaining ?? 0) / state.config.questionSeconds) * 100))}%`, background: (state.questionRemaining ?? 0) <= 10 ? 'var(--alert)' : 'var(--brass)' }} />
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="mt-serif text-lg leading-relaxed">
+                <span className="mt-mono text-sm mr-2" style={{ color: 'var(--ink-faint)' }}>Q{state.currentIndex + 1}.</span>
+                {q.text}
+              </div>
+            </div>
+            <div className="text-xs mb-5" style={{ color: 'var(--ink-faint)' }}>{q.marks} mark{q.marks === 1 ? '' : 's'}{state.config.negativeMarking > 0 && (q.type === 'mcq' || q.type === 'numeric') ? ` · −${state.config.negativeMarking} if wrong` : ''}</div>
+
+            {q.type === 'mcq' && (
+              <div className="space-y-2">
+                {(q.options || []).map((opt, i) => (
+                  <div key={i} className={`mt-option-row ${answer === opt ? 'selected' : ''}`} onClick={() => !isLocked && dispatch({ type: 'SELECT_ANSWER', value: opt })}>
+                    <div className={`mt-radio ${answer === opt ? 'checked' : ''}`} />
+                    <span className="text-sm">{String.fromCharCode(65 + i)}. {opt}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {q.type === 'numeric' && (
+              <input
+                type="number"
+                className="mt-input max-w-xs"
+                placeholder="Enter numeric answer"
+                value={answer ?? ''}
+                disabled={isLocked}
+                onChange={(e) => dispatch({ type: 'SELECT_ANSWER', value: e.target.value })}
+              />
+            )}
+            {q.type === 'short' && (
+              <input
+                type="text"
+                className="mt-input"
+                placeholder="Enter your answer"
+                value={answer ?? ''}
+                disabled={isLocked}
+                onChange={(e) => dispatch({ type: 'SELECT_ANSWER', value: e.target.value })}
+              />
+            )}
+            {q.type === 'descriptive' && (
+              <textarea
+                className="mt-textarea mt-scrollbar"
+                rows={8}
+                placeholder="Write your answer…"
+                value={answer ?? ''}
+                disabled={isLocked}
+                onChange={(e) => dispatch({ type: 'SELECT_ANSWER', value: e.target.value })}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Palette sidebar (desktop) */}
+        <div className="hidden lg:block w-72 border-l mt-hairline overflow-y-auto mt-scrollbar p-4" style={{ background: '#fff' }}>
+          <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} />
+        </div>
+      </div>
+
+      {/* Bottom action bar */}
+      <div className="border-t mt-hairline px-4 md:px-6 py-3 flex items-center justify-between gap-2 flex-wrap" style={{ background: '#fff' }}>
+        <div className="flex items-center gap-2">
+          <button className="mt-btn mt-btn-ghost" onClick={() => dispatch({ type: 'PREV' })} disabled={state.currentIndex === 0}><ChevronLeft size={15} /> Previous</button>
+          <button className="mt-btn mt-btn-ghost" onClick={() => dispatch({ type: 'CLEAR' })} disabled={isLocked}><RotateCcw size={14} /> Clear</button>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="mt-btn mt-btn-review" onClick={() => { dispatch({ type: 'TOGGLE_MARK' }); dispatch({ type: 'NEXT' }); }} disabled={isLocked}><Flag size={14} /> Mark & Next</button>
+          <button className="mt-btn mt-btn-primary" onClick={() => dispatch({ type: 'NEXT' })}>Save & Next <ChevronRight size={15} /></button>
+          <button className="mt-btn mt-btn-brass" onClick={() => setShowSubmitModal(true)}>Submit</button>
+        </div>
+      </div>
+
+      {showPaletteMobile && (
+        <div className="fixed inset-0 z-40 flex justify-end lg:hidden" style={{ background: 'rgba(28,37,65,0.4)' }} onClick={() => setShowPaletteMobile(false)}>
+          <div className="w-72 h-full bg-white p-4 overflow-y-auto mt-scrollbar" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-end mb-2"><button onClick={() => setShowPaletteMobile(false)}><X size={18} /></button></div>
+            <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} onGoto={() => setShowPaletteMobile(false)} />
+          </div>
+        </div>
+      )}
+
+      {showSubmitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(28,37,65,0.45)' }}>
+          <div className="mt-card p-6 max-w-sm w-full mt-fade-in">
+            <div className="mt-serif text-lg font-semibold mb-3">Submit the test?</div>
+            <div className="space-y-1.5 text-sm mb-5">
+              <div className="flex justify-between"><span style={{ color: 'var(--ink-soft)' }}>Answered</span><span className="mt-mono">{counts.answered}</span></div>
+              <div className="flex justify-between"><span style={{ color: 'var(--ink-soft)' }}>Not answered</span><span className="mt-mono">{counts.notAnswered}</span></div>
+              <div className="flex justify-between"><span style={{ color: 'var(--ink-soft)' }}>Marked for review</span><span className="mt-mono">{counts.marked}</span></div>
+              <div className="flex justify-between"><span style={{ color: 'var(--ink-soft)' }}>Not visited</span><span className="mt-mono">{counts.notVisited}</span></div>
+              <div className="flex justify-between pt-1"><span style={{ color: 'var(--ink-soft)' }}>Time remaining</span><span className="mt-mono">{fmtClock(state.overallRemaining)}</span></div>
+            </div>
+            <div className="flex gap-2">
+              <button className="mt-btn mt-btn-ghost flex-1 justify-center" onClick={() => setShowSubmitModal(false)}>Keep going</button>
+              <button className="mt-btn mt-btn-brass flex-1 justify-center" onClick={() => dispatch({ type: 'SUBMIT' })}>Submit now</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PaletteContent({ state, dispatch, counts, sections, onGoto }) {
+  const statusClass = (fq) => {
+    if (state.lockedSections[fq.sectionId]) return 'locked';
+    const st = state.status[fq.id];
+    if (!st) return 'not-visited';
+    return st;
+  };
+  return (
+    <div>
+      <div className="mt-label mb-3">Question palette</div>
+      <div className="grid grid-cols-2 gap-2 mb-5 text-xs">
+        <LegendDot color="var(--answered)" label={`Answered (${counts.answered})`} />
+        <LegendDot color="var(--alert)" label={`Not answered (${counts.notAnswered})`} />
+        <LegendDot color="var(--review)" label={`Marked (${counts.marked})`} />
+        <LegendDot color="var(--ink-faint)" label={`Not visited (${counts.notVisited})`} />
+      </div>
+      {sections.map(sec => {
+        const qs = state.flatQuestions.map((fq, idx) => ({ fq, idx })).filter(x => x.fq.sectionId === sec.id);
+        if (!qs.length) return null;
+        return (
+          <div key={sec.id} className="mb-4">
+            <div className="text-xs font-semibold mb-2 flex items-center gap-1.5" style={{ color: 'var(--ink-soft)' }}>
+              {sec.name}
+              {state.lockedSections[sec.id] && <span className="text-xs" style={{ color: 'var(--alert)' }}>(locked)</span>}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {qs.map(({ fq, idx }) => (
+                <button
+                  key={fq.id}
+                  className={`mt-bubble ${statusClass(fq)} ${idx === state.currentIndex ? 'current' : ''}`}
+                  onClick={() => { dispatch({ type: 'GOTO', index: idx }); onGoto && onGoto(); }}
+                  disabled={state.lockedSections[fq.sectionId]}
+                >
+                  {idx + 1}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function LegendDot({ color, label }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span style={{ width: 9, height: 9, borderRadius: 999, background: color, display: 'inline-block' }} />
+      <span style={{ color: 'var(--ink-soft)' }}>{label}</span>
+    </div>
+  );
+}
+
+/* ============================================================
+   SCREEN 5 — RESULTS
+   ============================================================ */
+function normalize(v) {
+  return (v ?? '').toString().trim().toLowerCase();
+}
+
+function gradeTest(state) {
+  let maxObjective = 0, obtained = 0, correctCount = 0, wrongCount = 0, unansweredObjective = 0;
+  const needsReview = [];
+  const perQuestion = [];
+
+  state.flatQuestions.forEach((q, idx) => {
+    const ans = state.answers[q.id];
+    const hasAnswer = ans !== undefined && ans !== '' && ans !== null;
+    const gradable = (q.type === 'mcq' || q.type === 'numeric') && q.correctAnswer;
+    let verdict = 'ungraded';
+
+    if (gradable) {
+      maxObjective += q.marks;
+      if (!hasAnswer) {
+        unansweredObjective++;
+        verdict = 'unanswered';
+      } else if (normalize(ans) === normalize(q.correctAnswer)) {
+        obtained += q.marks;
+        correctCount++;
+        verdict = 'correct';
+      } else {
+        obtained -= state.config.negativeMarking || 0;
+        wrongCount++;
+        verdict = 'wrong';
+      }
+    } else if (q.type === 'short' && q.correctAnswer) {
+      maxObjective += q.marks;
+      if (!hasAnswer) { unansweredObjective++; verdict = 'unanswered'; }
+      else if (normalize(ans) === normalize(q.correctAnswer)) { obtained += q.marks; correctCount++; verdict = 'correct'; }
+      else { wrongCount++; verdict = 'wrong'; needsReview.push(q); }
+    } else {
+      needsReview.push(q);
+    }
+
+    perQuestion.push({
+      index: idx + 1,
+      id: q.id,
+      time: state.timeSpent[q.id] || 0,
+      verdict
+    });
+  });
+
+  return { maxObjective, obtained, correctCount, wrongCount, unansweredObjective, needsReview, perQuestion };
+}
+
+function ResultsScreen({ state, onRestart }) {
+  const grade = useMemo(() => gradeTest(state), [state]);
+  const [filter, setFilter] = useState('all');
+
+  const filtered = state.flatQuestions.filter((q, idx) => {
+    if (filter === 'all') return true;
+    const st = state.status[q.id];
+    if (filter === 'answered') return st === 'answered' || st === 'answered-marked';
+    if (filter === 'unanswered') return !st || st === 'not-answered' || st === 'marked';
+    if (filter === 'marked') return st === 'marked' || st === 'answered-marked';
+    return true;
+  });
+
+  const chartData = grade.perQuestion.map(p => ({ name: `${p.index}`, seconds: p.time, verdict: p.verdict }));
+  const verdictColor = { correct: 'var(--answered)', wrong: 'var(--alert)', unanswered: 'var(--ink-faint)', ungraded: 'var(--brass)' };
+
+  const timeUsed = Math.max(0, state.config.totalMinutes * 60 - state.overallRemaining);
+
+  return (
+    <div className="min-h-full p-6 md:p-10 flex justify-center">
+      <div className="w-full max-w-3xl mt-fade-in pb-16">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="mt-seal"><BarChart3 size={18} /></div>
+          <div>
+            <div className="mt-serif text-2xl font-semibold leading-tight">{state.paper.title} — Results</div>
+            <div className="text-sm" style={{ color: 'var(--ink-soft)' }}>Completed in {fmtClock(timeUsed)}</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          <StatCard label="Score" value={grade.maxObjective > 0 ? `${grade.obtained}/${grade.maxObjective}` : '—'} />
+          <StatCard label="Correct" value={grade.correctCount} color="var(--answered)" />
+          <StatCard label="Wrong" value={grade.wrongCount} color="var(--alert)" />
+          <StatCard label="Unanswered" value={grade.unansweredObjective} color="var(--ink-faint)" />
+        </div>
+
+        {grade.needsReview.length > 0 && (
+          <div className="text-xs mb-6 p-3 rounded flex items-start gap-2" style={{ background: 'var(--brass-soft)', color: 'var(--ink)' }}>
+            <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--brass)' }} />
+            <span>{grade.needsReview.length} short/descriptive answer{grade.needsReview.length === 1 ? '' : 's'} need manual review — they aren't included in the score above.</span>
+          </div>
+        )}
+
+        <div className="mt-card p-5 mb-6">
+          <div className="mt-label mb-3">Time spent per question</div>
+          <div style={{ width: '100%', height: 200 }}>
+            <ResponsiveContainer>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--rule)" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--ink-soft)' }} />
+                <YAxis tick={{ fontSize: 11, fill: 'var(--ink-soft)' }} label={{ value: 'sec', angle: -90, position: 'insideLeft', fontSize: 11, fill: 'var(--ink-soft)' }} />
+                <Tooltip formatter={(v) => [`${v}s`, 'time spent']} labelFormatter={(l) => `Q${l}`} />
+                <Bar dataKey="seconds" radius={[2, 2, 0, 0]}>
+                  {chartData.map((d, i) => <Cell key={i} fill={verdictColor[d.verdict] || 'var(--brass)'} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          {['all', 'answered', 'unanswered', 'marked'].map(f => (
+            <button key={f} className="mt-btn" style={filter === f ? { background: 'var(--ink)', color: 'var(--paper)' } : { background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--rule)' }} onClick={() => setFilter(f)}>
+              {f[0].toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          {filtered.map((q) => {
+            const idx = state.flatQuestions.findIndex(fq => fq.id === q.id);
+            const ans = state.answers[q.id];
+            const gradable = (q.type === 'mcq' || q.type === 'numeric' || q.type === 'short') && q.correctAnswer;
+            const correct = gradable && normalize(ans) === normalize(q.correctAnswer);
+            return (
+              <div key={q.id} className="mt-card p-4">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div className="text-sm mt-serif"><span className="mt-mono text-xs mr-1.5" style={{ color: 'var(--ink-faint)' }}>Q{idx + 1}.</span>{q.text}</div>
+                  <span className="text-xs mt-mono flex-shrink-0" style={{ color: 'var(--ink-faint)' }}>{fmtClock(state.timeSpent[q.id] || 0)}</span>
+                </div>
+                <div className="text-xs mb-1" style={{ color: 'var(--ink-soft)' }}>
+                  Your answer: <span style={{ color: ans ? (gradable ? (correct ? 'var(--answered)' : 'var(--alert)') : 'var(--ink)') : 'var(--ink-faint)' }}>{ans || 'Not answered'}</span>
+                </div>
+                {q.correctAnswer && (
+                  <div className="text-xs" style={{ color: 'var(--ink-soft)' }}>
+                    {q.type === 'descriptive' ? 'Reference answer' : 'Correct answer'}: <span style={{ color: 'var(--answered)' }}>{q.correctAnswer}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex justify-center mt-8">
+          <button className="mt-btn mt-btn-brass" onClick={onRestart}><RotateCcw size={15} /> Start another mock test</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, color }) {
+  return (
+    <div className="mt-card p-4 text-center">
+      <div className="mt-label mb-1">{label}</div>
+      <div className="mt-mono text-2xl font-semibold" style={{ color: color || 'var(--ink)' }}>{value}</div>
+    </div>
+  );
+}
+
+/* ============================================================
+   ROOT APP — exported as MockTestApp
+   ============================================================ */
+export default function MockTestApp() {
+  const [stage, setStage] = useState('upload'); // upload | review | configure | test | results
+  const [paper, setPaper] = useState(null);
+  const [config, setConfig] = useState(null);
+  const [finalState, setFinalState] = useState(null);
+
+  const reset = () => { setStage('upload'); setPaper(null); setConfig(null); setFinalState(null); };
+
+  return (
+    <div className="mt-root">
+      <GlobalStyles />
+      {stage === 'upload' && (
+        <UploadScreen onExtracted={(p) => { setPaper(p); setStage('review'); }} />
+      )}
+      {stage === 'review' && paper && (
+        <ReviewScreen paper={paper} setPaper={setPaper} onBack={() => setStage('upload')} onContinue={() => setStage('configure')} />
+      )}
+      {stage === 'configure' && paper && (
+        <ConfigureScreen paper={paper} onBack={() => setStage('review')} onStart={(cfg) => { setConfig(cfg); setStage('test'); }} />
+      )}
+      {stage === 'test' && paper && config && (
+        <TestScreen paper={paper} config={config} onFinish={(st) => { setFinalState(st); setStage('results'); }} />
+      )}
+      {stage === 'results' && finalState && (
+        <ResultsScreen state={finalState} onRestart={reset} />
+      )}
+    </div>
+  );
+}
