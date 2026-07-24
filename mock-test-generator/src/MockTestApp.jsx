@@ -187,6 +187,21 @@ function GlobalStyles() {
       }
       .mt-option-row:hover { border-color: var(--ink-faint); }
       .mt-option-row.selected { border-color: var(--ink); background: var(--paper-dim); }
+
+      /* Locks a screen to the viewport height so header/footer stay put
+         and only the inner content region scrolls. */
+      .mt-viewport-fixed {
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      @media (max-width: 480px) {
+        .mt-btn { padding: 0.55rem 0.7rem; font-size: 0.8rem; gap: 0.3rem; }
+        .mt-bubble { width: 2.1rem; height: 2.1rem; font-size: 0.75rem; }
+      }
     `}</style>
   );
 }
@@ -704,9 +719,12 @@ function ConfigureScreen({ paper, onBack, onStart }) {
             <button className="mt-btn mt-btn-ghost" onClick={onBack}><ChevronLeft size={15} /> Back</button>
             <button
               className="mt-btn mt-btn-brass"
-              onClick={() => onStart({
-                totalMinutes, useSectionTiming, sectionMinutes, useQuestionTiming, questionSeconds, negativeMarking
-              })}
+              onClick={() => {
+                enterFullscreen();
+                onStart({
+                  totalMinutes, useSectionTiming, sectionMinutes, useQuestionTiming, questionSeconds, negativeMarking
+                });
+              }}
             >
               <Play size={15} /> Begin mock test
             </button>
@@ -864,10 +882,28 @@ function testReducer(state, action) {
   }
 }
 
+function enterFullscreen() {
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  if (req) {
+    try { req.call(el).catch(() => {}); } catch (e) { /* ignore */ }
+  }
+}
+
+function exitFullscreen() {
+  const isFs = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+  if (!isFs) return;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+  if (exit) {
+    try { exit.call(document).catch(() => {}); } catch (e) { /* ignore */ }
+  }
+}
+
 function TestScreen({ paper, config, onFinish }) {
   const [state, dispatch] = useReducer(testReducer, undefined, () => initTestState(paper, config));
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showPaletteMobile, setShowPaletteMobile] = useState(false);
+  const [showFsPrompt, setShowFsPrompt] = useState(false);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -876,8 +912,28 @@ function TestScreen({ paper, config, onFinish }) {
     return () => clearInterval(interval);
   }, []);
 
+  // Enter fullscreen as soon as the test screen mounts (fallback in case
+  // the "Begin mock test" click didn't get the gesture through), and make
+  // sure we always leave fullscreen when the test screen unmounts.
+  useEffect(() => {
+    enterFullscreen();
+    const handler = () => {
+      const isFs = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+      setShowFsPrompt(!isFs);
+    };
+    document.addEventListener('fullscreenchange', handler);
+    document.addEventListener('webkitfullscreenchange', handler);
+    handler();
+    return () => {
+      document.removeEventListener('fullscreenchange', handler);
+      document.removeEventListener('webkitfullscreenchange', handler);
+      exitFullscreen();
+    };
+  }, []);
+
   useEffect(() => {
     if (state.finished) {
+      exitFullscreen();
       onFinish(state);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -905,14 +961,14 @@ function TestScreen({ paper, config, onFinish }) {
   const sectionsForPalette = paper.sections;
 
   return (
-    <div className="min-h-full flex flex-col">
+    <div className="mt-viewport-fixed">
       {/* Header */}
-      <div className="border-b mt-hairline px-4 md:px-6 py-3 flex items-center justify-between gap-3" style={{ background: '#fff' }}>
+      <div className="border-b mt-hairline px-3 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-2 md:gap-3 flex-shrink-0" style={{ background: '#fff' }}>
         <div className="min-w-0">
           <div className="mt-serif font-semibold text-sm md:text-base truncate">{paper.title}</div>
-          <div className="text-xs" style={{ color: 'var(--ink-soft)' }}>{q.sectionName} · Q{state.currentIndex + 1} of {state.flatQuestions.length}</div>
+          <div className="text-xs truncate" style={{ color: 'var(--ink-soft)' }}>{q.sectionName} · Q{state.currentIndex + 1} of {state.flatQuestions.length}</div>
         </div>
-        <div className="flex items-center gap-4 flex-shrink-0">
+        <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
           {state.config.useSectionTiming && (
             <div className="text-right hidden sm:block">
               <div className="mt-label" style={{ fontSize: '0.62rem' }}>Section</div>
@@ -923,13 +979,20 @@ function TestScreen({ paper, config, onFinish }) {
           )}
           <div className="text-right">
             <div className="mt-label" style={{ fontSize: '0.62rem' }}>Time left</div>
-            <div className={`mt-flip mt-mono text-xl ${overallCritical ? 'mt-pulse' : ''}`} style={{ color: overallCritical ? 'var(--alert)' : 'var(--ink)' }}>
+            <div className={`mt-flip mt-mono text-base md:text-xl ${overallCritical ? 'mt-pulse' : ''}`} style={{ color: overallCritical ? 'var(--alert)' : 'var(--ink)' }}>
               {fmtClock(state.overallRemaining)}
             </div>
           </div>
           <button className="mt-btn mt-btn-ghost lg:hidden" onClick={() => setShowPaletteMobile(true)}><Layers size={16} /></button>
         </div>
       </div>
+
+      {showFsPrompt && (
+        <div className="flex-shrink-0 flex items-center justify-between gap-3 px-3 md:px-6 py-2 text-xs" style={{ background: 'var(--brass-soft)', color: 'var(--ink)' }}>
+          <span className="flex items-center gap-1.5"><AlertTriangle size={13} style={{ color: 'var(--brass)' }} /> You're not in full screen mode.</span>
+          <button className="mt-btn mt-btn-brass" style={{ padding: '0.35rem 0.7rem', fontSize: '0.72rem' }} onClick={enterFullscreen}>Enter full screen</button>
+        </div>
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         {/* Main question panel */}
@@ -1007,22 +1070,23 @@ function TestScreen({ paper, config, onFinish }) {
         </div>
       </div>
 
-      {/* Bottom action bar */}
-      <div className="border-t mt-hairline px-4 md:px-6 py-3 flex items-center justify-between gap-2 flex-wrap" style={{ background: '#fff' }}>
-        <div className="flex items-center gap-2">
-          <button className="mt-btn mt-btn-ghost" onClick={() => dispatch({ type: 'PREV' })} disabled={state.currentIndex === 0}><ChevronLeft size={15} /> Previous</button>
-          <button className="mt-btn mt-btn-ghost" onClick={() => dispatch({ type: 'CLEAR' })} disabled={isLocked}><RotateCcw size={14} /> Clear</button>
+      {/* Bottom action bar — stays fixed at the bottom of the viewport; only the
+          question panel above scrolls. Labels collapse to icons on narrow screens. */}
+      <div className="flex-shrink-0 border-t mt-hairline px-2.5 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-1.5 md:gap-2" style={{ background: '#fff' }}>
+        <div className="flex items-center gap-1.5 md:gap-2">
+          <button className="mt-btn mt-btn-ghost" onClick={() => dispatch({ type: 'PREV' })} disabled={state.currentIndex === 0}><ChevronLeft size={15} /> <span className="hidden sm:inline">Previous</span></button>
+          <button className="mt-btn mt-btn-ghost" onClick={() => dispatch({ type: 'CLEAR' })} disabled={isLocked}><RotateCcw size={14} /> <span className="hidden sm:inline">Clear</span></button>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="mt-btn mt-btn-review" onClick={() => { dispatch({ type: 'TOGGLE_MARK' }); dispatch({ type: 'NEXT' }); }} disabled={isLocked}><Flag size={14} /> Mark & Next</button>
-          <button className="mt-btn mt-btn-primary" onClick={() => dispatch({ type: 'NEXT' })}>Save & Next <ChevronRight size={15} /></button>
+        <div className="flex items-center gap-1.5 md:gap-2">
+          <button className="mt-btn mt-btn-review" onClick={() => { dispatch({ type: 'TOGGLE_MARK' }); dispatch({ type: 'NEXT' }); }} disabled={isLocked}><Flag size={14} /> <span className="hidden sm:inline">Mark & Next</span></button>
+          <button className="mt-btn mt-btn-primary" onClick={() => dispatch({ type: 'NEXT' })}><span className="hidden sm:inline">Save & Next</span><span className="sm:hidden">Next</span> <ChevronRight size={15} /></button>
           <button className="mt-btn mt-btn-brass" onClick={() => setShowSubmitModal(true)}>Submit</button>
         </div>
       </div>
 
       {showPaletteMobile && (
         <div className="fixed inset-0 z-40 flex justify-end lg:hidden" style={{ background: 'rgba(28,37,65,0.4)' }} onClick={() => setShowPaletteMobile(false)}>
-          <div className="w-72 h-full bg-white p-4 overflow-y-auto mt-scrollbar" onClick={(e) => e.stopPropagation()}>
+          <div className="w-72 max-w-[85vw] h-full bg-white p-4 overflow-y-auto mt-scrollbar" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-end mb-2"><button onClick={() => setShowPaletteMobile(false)}><X size={18} /></button></div>
             <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} onGoto={() => setShowPaletteMobile(false)} />
           </div>
@@ -1175,8 +1239,9 @@ function ResultsScreen({ state, onRestart }) {
   const timeUsed = Math.max(0, state.config.totalMinutes * 60 - state.overallRemaining);
 
   return (
-    <div className="min-h-full p-6 md:p-10 flex justify-center">
-      <div className="w-full max-w-3xl mt-fade-in pb-16">
+    <div className="mt-viewport-fixed">
+      <div className="flex-1 overflow-y-auto mt-scrollbar p-6 md:p-10 flex justify-center">
+      <div className="w-full max-w-3xl mt-fade-in pb-8">
         <div className="flex items-center gap-3 mb-8">
           <div className="mt-seal"><BarChart3 size={18} /></div>
           <div>
@@ -1248,10 +1313,11 @@ function ResultsScreen({ state, onRestart }) {
             );
           })}
         </div>
+      </div>
+      </div>
 
-        <div className="flex justify-center mt-8">
-          <button className="mt-btn mt-btn-brass" onClick={onRestart}><RotateCcw size={15} /> Start another mock test</button>
-        </div>
+      <div className="flex-shrink-0 border-t mt-hairline p-3 md:p-4 flex justify-center" style={{ background: 'var(--paper)' }}>
+        <button className="mt-btn mt-btn-brass" onClick={onRestart}><RotateCcw size={15} /> Start another mock test</button>
       </div>
     </div>
   );
