@@ -60,7 +60,7 @@ app.post('/api/gemini', async (req, res) => {
     const body = {
       contents,
       systemInstruction,
-      generationConfig: { maxOutputTokens: maxOutputTokens || 1000 }
+      generationConfig: { maxOutputTokens: maxOutputTokens || 8192 }
     };
 
     let lastResult = null;

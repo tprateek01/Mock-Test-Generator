@@ -251,15 +251,33 @@ function parseJsonLoose(text) {
   let t = text.trim();
   t = t.replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
   const first = t.indexOf('{');
-  const last = t.lastIndexOf('}');
-  if (first >= 0 && last > first) t = t.slice(first, last + 1);
-  return JSON.parse(t);
+  if (first < 0) throw new Error('No JSON object found in response');
+  // Walk forward tracking brace depth (respecting strings/escapes) to find the
+  // TRUE matching closing brace, rather than naively using the last '}' in the
+  // text — a naive lastIndexOf can accidentally match an earlier nested brace
+  // when the response was cut off mid-object, silently "succeeding" on
+  // truncated/corrupted content instead of failing so we retry.
+  let depth = 0, inString = false, escaped = false, end = -1;
+  for (let i = first; i < t.length; i++) {
+    const ch = t[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  if (end === -1) throw new Error('Truncated or unbalanced JSON in response');
+  return JSON.parse(t.slice(first, end + 1));
 }
 
 const EXTRACTION_SYSTEM = `You extract exam questions from a source document into strict JSON. Output ONLY minified JSON — no markdown fences, no commentary, no preamble.
 
 Schema:
-{"title":"string","sections":[{"name":"string","questions":[{"type":"mcq|numeric|short|descriptive","text":"string","options":["string"]|null,"marks":number,"correctAnswer":"string"|null}]}],"complete":boolean}
+{"title":"string","totalQuestionsInSource":number|null,"sections":[{"name":"string","questions":[{"type":"mcq|numeric|short|descriptive","text":"string","options":["string"]|null,"marks":number,"correctAnswer":"string"|null}]}],"complete":boolean}
 
 Rules:
 - "mcq" = multiple choice with options. "numeric" = requires a numeric answer, no options. "short" = brief word/phrase/one-line answer. "descriptive" = long-form written answer.
@@ -268,8 +286,15 @@ Rules:
 - correctAnswer: fill in ONLY if an answer key is clearly present in the source; for mcq, give the exact option text. Never invent an answer — use null if unsure.
 - Group questions under their section headings exactly as they appear (e.g. "Section A", "Physics", "Part I"). If there are no explicit sections, use one section named "Section 1".
 - Preserve original question order.
-- Your response has a strict token budget. Include as many COMPLETE questions as fit — never cut a question in half. If you reach the budget before finishing the source, stop right after the last complete question and set "complete": false. If you have covered the entire source, set "complete": true.
+- totalQuestionsInSource: on your FIRST response only, scan the whole source (page numbers, question numbering, "Q1..Q100" style headers, table of contents, etc.) and give your best-effort count of the TOTAL number of questions the source actually contains, even though you will only extract a partial batch in this response. This is a sanity check used to make sure nothing gets missed later — take it seriously and base it on real evidence in the document (highest question number visible, explicit counts stated, etc.), not a guess. On later continuation responses, repeat the same number (or refine it if you now have better evidence), or null if truly unknowable.
+- Your response has a strict output-length budget. Include as many COMPLETE questions as fit — never cut a question, an option list, or a passage in half. If you reach the budget before finishing the source, stop right after the last fully-written question and set "complete": false. If you have covered the entire source, set "complete": true.
 - When told to continue, resume immediately after the last question you already sent. Never repeat a question.
+
+PASSAGE / COMPREHENSION SETS — read carefully, this is a common failure point:
+- When several questions share one reading passage, case study, data table, or other common stimulus text, embed the passage's FULL text — complete and verbatim, never summarized, paraphrased, or shortened — inside the "text" field of the FIRST question in that set, before the question itself (e.g. "Passage: <entire passage text>\\n\\nQuestion: <the actual question>").
+- For every OTHER question in that same set, do NOT repeat the passage again — its "text" field should contain only that individual question (you may add a short lead-in like "Based on the passage above,").
+- Never start emitting a passage-based question unless you are confident your remaining output budget can fit the ENTIRE passage plus that first question. If you are not sure it will fit, stop BEFORE starting that question (set "complete": false) rather than emitting a half-written passage — a truncated passage is worse than a delayed one.
+- When continuing after a stop like that, re-emit the FULL passage from the beginning (since it was never sent), never a fragment.
 
 Real-world source documents are messy. Handle all of the following without asking for clarification:
 - IGNORE entire pages or blocks that are advertisements, app-download banners, subscription/promo pages, watermarks, logos, or website chrome (e.g. "Download the app", "Get it on Google Play", pricing/subscription tables). These never contain real questions — skip them entirely and continue to the next real question.
@@ -285,21 +310,38 @@ async function extractQuestions(sourceParts, onProgress) {
     parts: [...sourceParts, { text: 'Extract all questions from this exam paper into the JSON schema described in the system instructions. Begin with the first question.' }]
   }];
   const sections = [];
-  let complete = false;
   let iterations = 0;
   let title = 'Mock Test';
+  let expectedTotal = null;
+  let reconcileRounds = 0;
+  let staleStreak = 0;
 
-  while (!complete && iterations < 20) {
+  const MAX_ITERATIONS = 60;
+  const MAX_RECONCILE_ROUNDS = 6;
+  // Large per-call output budget: the old 1000-token cap was the root cause of
+  // both missed questions and mid-passage cutoffs — it forced the model to stop
+  // after just a few questions (or partway through a long passage) every time.
+  const MAX_OUTPUT_TOKENS = 8192;
+
+  const totalSoFar = () => sections.reduce((n, s) => n + s.questions.length, 0);
+
+  while (iterations < MAX_ITERATIONS) {
     iterations++;
-    const raw = await callGemini(contents, EXTRACTION_SYSTEM, 1000);
+    const raw = await callGemini(contents, EXTRACTION_SYSTEM, MAX_OUTPUT_TOKENS);
     let parsed;
     try {
       parsed = parseJsonLoose(raw);
     } catch (e) {
-      contents = [...contents, { role: 'model', parts: [{ text: raw }] }, { role: 'user', parts: [{ text: 'That was not valid JSON. Resend ONLY valid minified JSON matching the schema, nothing else.' }] }];
+      contents = [...contents, { role: 'model', parts: [{ text: raw }] }, { role: 'user', parts: [{ text: 'That was not valid JSON (possibly cut off). Resend ONLY valid, complete, minified JSON matching the schema — a smaller batch of questions if needed so the response fits, but every question in it must be complete, including any passage text in full.' }] }];
       continue;
     }
+
     if (parsed.title) title = parsed.title;
+    if (expectedTotal === null && typeof parsed.totalQuestionsInSource === 'number' && parsed.totalQuestionsInSource > 0) {
+      expectedTotal = parsed.totalQuestionsInSource;
+    }
+
+    const beforeCount = totalSoFar();
     (parsed.sections || []).forEach(sec => {
       let existing = sections.find(s => s.name === sec.name);
       if (!existing) { existing = { id: uid('sec'), name: sec.name, questions: [] }; sections.push(existing); }
@@ -314,11 +356,30 @@ async function extractQuestions(sourceParts, onProgress) {
         });
       });
     });
-    onProgress && onProgress(sections.reduce((n, s) => n + s.questions.length, 0));
-    complete = !!parsed.complete;
-    if (!complete) {
-      contents = [...contents, { role: 'model', parts: [{ text: raw }] }, { role: 'user', parts: [{ text: 'Continue extracting the next batch of questions, same JSON schema. Do not repeat questions already sent.' }] }];
+    const afterCount = totalSoFar();
+    onProgress && onProgress(afterCount);
+
+    const madeProgress = afterCount > beforeCount;
+    staleStreak = madeProgress ? 0 : staleStreak + 1;
+    // Two responses in a row with zero new questions means the model is stuck —
+    // stop rather than burn through all remaining iterations for nothing.
+    if (staleStreak >= 2) break;
+
+    if (!parsed.complete) {
+      contents = [...contents, { role: 'model', parts: [{ text: raw }] }, { role: 'user', parts: [{ text: `You have extracted ${afterCount} question(s) so far${expectedTotal ? ` out of an estimated ${expectedTotal}` : ''}. Continue extracting the NEXT batch from exactly where you left off, same JSON schema. Never repeat a question already extracted. If a question shares a passage you already sent in full in a previous response, do not resend that passage text — just continue with the question.` }] }];
+      continue;
     }
+
+    // The model says it's finished — but before trusting that, check it against
+    // its own earlier estimate of the total. This is what catches "90 out of 100"
+    // style undercounts instead of silently accepting an incomplete extraction.
+    if (expectedTotal && afterCount < expectedTotal && reconcileRounds < MAX_RECONCILE_ROUNDS) {
+      reconcileRounds++;
+      contents = [...contents, { role: 'model', parts: [{ text: raw }] }, { role: 'user', parts: [{ text: `You estimated earlier that this source has about ${expectedTotal} questions, but you have only extracted ${afterCount} so far. Carefully re-scan the ENTIRE source end to end, including any pages, sections, or passage-based question sets you may have skipped, and extract every remaining question you find, same JSON schema. Never repeat a question already extracted. If after a careful re-check there truly are no more questions, set "complete": true again.` }] }];
+      continue;
+    }
+
+    break;
   }
   return { title, sections };
 }
@@ -1175,6 +1236,14 @@ function normalize(v) {
   return (v ?? '').toString().trim().toLowerCase();
 }
 
+// Formats a score to up to 3 decimal places, trimming trailing zeros
+// (7 -> "7", 7.5 -> "7.5", 7.256 -> "7.256") and fixing float precision
+// artifacts from repeated negative-marking subtraction (e.g. 6.999999999).
+function fmtScore(n) {
+  const rounded = Math.round((n + Number.EPSILON) * 1000) / 1000;
+  return rounded.toString();
+}
+
 function gradeTest(state) {
   let maxObjective = 0, obtained = 0, correctCount = 0, wrongCount = 0, unansweredObjective = 0;
   const needsReview = [];
@@ -1251,7 +1320,7 @@ function ResultsScreen({ state, onRestart }) {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <StatCard label="Score" value={grade.maxObjective > 0 ? `${grade.obtained}/${grade.maxObjective}` : '—'} />
+          <StatCard label="Score" value={grade.maxObjective > 0 ? `${fmtScore(grade.obtained)}/${fmtScore(grade.maxObjective)}` : '—'} />
           <StatCard label="Correct" value={grade.correctCount} color="var(--answered)" />
           <StatCard label="Wrong" value={grade.wrongCount} color="var(--alert)" />
           <StatCard label="Unanswered" value={grade.unansweredObjective} color="var(--ink-faint)" />
