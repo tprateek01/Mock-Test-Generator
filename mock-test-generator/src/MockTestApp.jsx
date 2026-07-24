@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef, useReducer, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useReducer, useMemo } from 'react';
 import mammoth from 'mammoth';
 import {
-  Upload, FileText, Image as ImageIcon, ClipboardPaste, Clock, Flag,
+  Upload, FileText, ClipboardPaste, Clock, Flag,
   ChevronLeft, ChevronRight, AlertTriangle, X, Plus, Trash2, Pencil,
-  Play, RotateCcw, CheckCircle2, Circle, Loader2, ListChecks, Timer,
-  BarChart3, Layers, Settings2, ArrowRight, Check
+  Play, RotateCcw, Loader2, ListChecks, Timer,
+  BarChart3, Layers, ArrowRight, Check
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
