@@ -252,21 +252,26 @@ function GlobalStyles() {
         overflow-y: auto;
       }
 
-      /* Virtual calculator — floating launcher + popover, available
-         during the test only when the candidate opted in beforehand. */
+      /* Virtual calculator — header launcher + dropdown popover, available
+         during the test only when the candidate opted in beforehand. Sits
+         inline in the header, just before the time-left clock. */
+      .mt-calc-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+      }
       .mt-calc-fab {
-        position: fixed;
-        right: 1.25rem;
-        bottom: 1.25rem;
-        width: 3.1rem;
-        height: 3.1rem;
+        position: static;
+        width: 2.3rem;
+        height: 2.3rem;
         border-radius: 999px;
         background: var(--ink);
         color: var(--paper);
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: 0 6px 18px rgba(28,37,65,0.35);
+        box-shadow: 0 4px 12px rgba(28,37,65,0.25);
         border: none;
         cursor: pointer;
         z-index: 60;
@@ -277,10 +282,10 @@ function GlobalStyles() {
       .mt-calc-fab.open { background: var(--brass); }
 
       .mt-calc-panel {
-        position: fixed;
-        right: 1.25rem;
-        bottom: 4.9rem;
-        width: 264px;
+        position: absolute;
+        top: calc(100% + 0.6rem);
+        right: 0;
+        width: 292px;
         max-width: calc(100vw - 2rem);
         background: #fff;
         border: 1px solid var(--rule);
@@ -363,6 +368,19 @@ function GlobalStyles() {
       .mt-calc-btn.equals { background: var(--ink); color: var(--paper); border-color: var(--ink); grid-column: span 2; }
       .mt-calc-btn.equals:hover { filter: brightness(1.2); }
       .mt-calc-btn.zero { grid-column: span 2; }
+      .mt-calc-btn.fn {
+        font-size: 0.68rem;
+        font-weight: 600;
+        color: var(--ink-soft);
+        background: var(--paper-dim);
+        letter-spacing: 0.01em;
+      }
+      .mt-calc-btn.fn:hover { color: var(--ink); filter: brightness(0.97); }
+      .mt-calc-divider {
+        height: 1px;
+        background: var(--rule);
+        margin: 0 0 0.5rem;
+      }
 
       @media (max-width: 480px) {
         .mt-btn { padding: 0.55rem 0.7rem; font-size: 0.8rem; gap: 0.3rem; }
@@ -370,8 +388,9 @@ function GlobalStyles() {
         .mt-site-header { height: 4.4rem; padding: 0 0.85rem; gap: 0.6rem; }
         .mt-site-header img { height: 2.8rem; width: 2.8rem; }
         .mt-brand-name { font-size: 1.55rem; }
-        .mt-calc-fab { right: 0.85rem; bottom: 0.85rem; width: 2.75rem; height: 2.75rem; }
-        .mt-calc-panel { right: 0.85rem; bottom: 4.15rem; width: 232px; }
+        .mt-calc-fab { width: 2.1rem; height: 2.1rem; }
+        .mt-calc-panel { right: -0.85rem; width: 250px; }
+        .mt-calc-btn.fn { font-size: 0.6rem; }
       }
     `}</style>
   );
@@ -953,7 +972,7 @@ function ConfigureScreen({ paper, onBack, onStart }) {
             <span className="mt-seal" style={{ width: '2.1rem', height: '2.1rem' }}><Calculator size={15} /></span>
             <span>
               <span className="mt-label block">Virtual calculator</span>
-              <span className="text-sm" style={{ color: 'var(--ink-soft)' }}>Allow a simple on-screen calculator (+ − × ÷) during this test</span>
+              <span className="text-sm" style={{ color: 'var(--ink-soft)' }}>Allow an on-screen scientific calculator (+ − × ÷, log, ln, x², √x, sin, cos, tan, antilog) during this test</span>
             </span>
           </label>
         </div>
@@ -1144,9 +1163,10 @@ function exitFullscreen() {
 }
 
 /* ============================================================
-   VIRTUAL CALCULATOR — floating launcher + popover shown during
+   VIRTUAL CALCULATOR — header launcher + dropdown shown during
    the test, only when the candidate enabled it at setup time.
-   Basic simple-operation calculator (+ − × ÷, decimal, clear).
+   Basic operations (+ − × ÷, decimal, clear) plus scientific
+   functions (log, ln, square, square root, sin, cos, tan, antilog).
    ============================================================ */
 
 // Only digits, the four basic operators, decimal points and spaces are ever
@@ -1159,6 +1179,11 @@ function calcLastSegment(expr) {
   return parts[parts.length - 1];
 }
 
+// Round away float noise (e.g. 0.1 + 0.2) while keeping real precision.
+function calcRound(n) {
+  return Math.round((n + Number.EPSILON) * 1e10) / 1e10;
+}
+
 function calcEvaluate(expr) {
   if (!expr || !CALC_SAFE_EXPR.test(expr)) throw new Error('invalid expression');
   // Strip a trailing operator (e.g. user hits "=" right after "12+") so
@@ -1168,9 +1193,23 @@ function calcEvaluate(expr) {
   // eslint-disable-next-line no-new-func
   const result = Function(`"use strict"; return (${clean});`)();
   if (typeof result !== 'number' || !isFinite(result)) throw new Error('bad result');
-  // Round away float noise (e.g. 0.1 + 0.2) while keeping real precision.
-  return Math.round((result + Number.EPSILON) * 1e10) / 1e10;
+  return calcRound(result);
 }
+
+// Scientific functions apply to the fully-evaluated current value — pressing
+// one evaluates whatever expression is on screen, then replaces the display
+// with the function's result (same feel as pressing "="). Angles for the
+// trig functions are taken in degrees, matching a standard exam calculator.
+const CALC_SCI_FNS = {
+  sin: (x) => Math.sin((x * Math.PI) / 180),
+  cos: (x) => Math.cos((x * Math.PI) / 180),
+  tan: (x) => Math.tan((x * Math.PI) / 180),
+  log: (x) => Math.log10(x),
+  ln: (x) => Math.log(x),
+  sq: (x) => x * x,
+  sqrt: (x) => Math.sqrt(x),
+  antilog: (x) => Math.pow(10, x),
+};
 
 function CalculatorWidget() {
   const [open, setOpen] = useState(false);
@@ -1194,6 +1233,21 @@ function CalculatorWidget() {
     if (val === '=') {
       try {
         const result = calcEvaluate(expr);
+        setExpr(String(result));
+        setJustEvaluated(true);
+        setErrored(false);
+      } catch (e) {
+        setErrored(true);
+        setJustEvaluated(false);
+      }
+      return;
+    }
+
+    if (CALC_SCI_FNS[val]) {
+      try {
+        const current = calcEvaluate(expr || '0');
+        const result = calcRound(CALC_SCI_FNS[val](current));
+        if (typeof result !== 'number' || !isFinite(result)) throw new Error('bad result');
         setExpr(String(result));
         setJustEvaluated(true);
         setErrored(false);
@@ -1235,14 +1289,14 @@ function CalculatorWidget() {
   };
 
   return (
-    <>
+    <div className="mt-calc-wrap">
       <button
         className={`mt-calc-fab ${open ? 'open' : ''}`}
         onClick={() => setOpen((o) => !o)}
         title={open ? 'Close calculator' : 'Open calculator'}
         aria-label={open ? 'Close calculator' : 'Open calculator'}
       >
-        {open ? <X size={20} /> : <Calculator size={20} />}
+        {open ? <X size={18} /> : <Calculator size={18} />}
       </button>
 
       {open && (
@@ -1253,6 +1307,19 @@ function CalculatorWidget() {
           </div>
           <div className="mt-calc-display">{display}</div>
           <div className="mt-calc-body">
+            <div className="mt-calc-row">
+              <button className="mt-calc-btn fn" onClick={() => press('sin')}>sin</button>
+              <button className="mt-calc-btn fn" onClick={() => press('cos')}>cos</button>
+              <button className="mt-calc-btn fn" onClick={() => press('tan')}>tan</button>
+              <button className="mt-calc-btn fn" onClick={() => press('log')}>log</button>
+            </div>
+            <div className="mt-calc-row">
+              <button className="mt-calc-btn fn" onClick={() => press('ln')}>ln</button>
+              <button className="mt-calc-btn fn" onClick={() => press('sq')}>x²</button>
+              <button className="mt-calc-btn fn" onClick={() => press('sqrt')}>√x</button>
+              <button className="mt-calc-btn fn" onClick={() => press('antilog')}>antilog</button>
+            </div>
+            <div className="mt-calc-divider" />
             <div className="mt-calc-row">
               <button className="mt-calc-btn clear" onClick={() => press('AC')}>AC</button>
               <button className="mt-calc-btn clear" onClick={() => press('DEL')}><Delete size={16} /></button>
@@ -1285,7 +1352,7 @@ function CalculatorWidget() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -1367,6 +1434,7 @@ function TestScreen({ paper, config, onFinish }) {
               </div>
             </div>
           )}
+          {state.config.calculatorEnabled && <CalculatorWidget />}
           <div className="text-right">
             <div className="mt-label" style={{ fontSize: '0.62rem' }}>Time left</div>
             <div className={`mt-flip mt-mono text-base md:text-xl ${overallCritical ? 'mt-pulse' : ''}`} style={{ color: overallCritical ? 'var(--alert)' : 'var(--ink)' }}>
@@ -1502,7 +1570,6 @@ function TestScreen({ paper, config, onFinish }) {
         </div>
       )}
 
-      {state.config.calculatorEnabled && <CalculatorWidget />}
     </div>
   );
 }
