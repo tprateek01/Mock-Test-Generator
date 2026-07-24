@@ -4,7 +4,7 @@ import {
   Upload, FileText, ClipboardPaste, Clock, Flag,
   ChevronLeft, ChevronRight, AlertTriangle, X, Plus, Trash2, Pencil,
   Play, RotateCcw, Loader2, ListChecks, Timer,
-  BarChart3, Layers, ArrowRight, Check
+  BarChart3, Layers, ArrowRight, Check, Calculator, Delete
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
@@ -228,7 +228,9 @@ function GlobalStyles() {
         font-family: 'Pacifico', cursive;
         font-weight: 400;
         font-size: 2rem;
-        line-height: 1;
+        line-height: 1.4;
+        padding-bottom: 0.15em;
+        overflow: visible;
         background: linear-gradient(90deg, var(--ink) 0%, var(--brass) 100%);
         -webkit-background-clip: text;
         background-clip: text;
@@ -250,12 +252,126 @@ function GlobalStyles() {
         overflow-y: auto;
       }
 
+      /* Virtual calculator — floating launcher + popover, available
+         during the test only when the candidate opted in beforehand. */
+      .mt-calc-fab {
+        position: fixed;
+        right: 1.25rem;
+        bottom: 1.25rem;
+        width: 3.1rem;
+        height: 3.1rem;
+        border-radius: 999px;
+        background: var(--ink);
+        color: var(--paper);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 6px 18px rgba(28,37,65,0.35);
+        border: none;
+        cursor: pointer;
+        z-index: 60;
+        transition: transform 0.12s ease, filter 0.12s ease;
+      }
+      .mt-calc-fab:hover { filter: brightness(1.2); }
+      .mt-calc-fab:active { transform: scale(0.94); }
+      .mt-calc-fab.open { background: var(--brass); }
+
+      .mt-calc-panel {
+        position: fixed;
+        right: 1.25rem;
+        bottom: 4.9rem;
+        width: 264px;
+        max-width: calc(100vw - 2rem);
+        background: #fff;
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        box-shadow: 0 14px 34px rgba(28,37,65,0.28);
+        z-index: 60;
+        overflow: hidden;
+      }
+      .mt-calc-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.6rem 0.8rem;
+        background: var(--paper-dim);
+        border-bottom: 1px solid var(--rule);
+      }
+      .mt-calc-title {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 600;
+        color: var(--ink-soft);
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+      .mt-calc-close {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--ink-soft);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.15rem;
+      }
+      .mt-calc-close:hover { color: var(--alert); }
+      .mt-calc-display {
+        margin: 0.7rem 0.8rem 0.2rem;
+        background: var(--paper);
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        padding: 0.6rem 0.7rem;
+        text-align: right;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 1.35rem;
+        font-weight: 600;
+        color: var(--ink);
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      .mt-calc-body { padding: 0.7rem 0.8rem 0.85rem; }
+      .mt-calc-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.4rem;
+        margin-bottom: 0.4rem;
+      }
+      .mt-calc-row:last-child { margin-bottom: 0; }
+      .mt-calc-btn {
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--ink);
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.95rem;
+        font-weight: 600;
+        height: 2.3rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: transform 0.06s ease, filter 0.1s ease;
+      }
+      .mt-calc-btn:hover { filter: brightness(0.97); background: var(--paper-dim); }
+      .mt-calc-btn:active { transform: translateY(1px); }
+      .mt-calc-btn.op { color: var(--brass); border-color: var(--brass-soft); background: var(--brass-soft); }
+      .mt-calc-btn.op:hover { filter: brightness(1.05); }
+      .mt-calc-btn.clear { color: var(--alert); }
+      .mt-calc-btn.equals { background: var(--ink); color: var(--paper); border-color: var(--ink); grid-column: span 2; }
+      .mt-calc-btn.equals:hover { filter: brightness(1.2); }
+      .mt-calc-btn.zero { grid-column: span 2; }
+
       @media (max-width: 480px) {
         .mt-btn { padding: 0.55rem 0.7rem; font-size: 0.8rem; gap: 0.3rem; }
         .mt-bubble { width: 2.1rem; height: 2.1rem; font-size: 0.75rem; }
         .mt-site-header { height: 4.4rem; padding: 0 0.85rem; gap: 0.6rem; }
         .mt-site-header img { height: 2.8rem; width: 2.8rem; }
         .mt-brand-name { font-size: 1.55rem; }
+        .mt-calc-fab { right: 0.85rem; bottom: 0.85rem; width: 2.75rem; height: 2.75rem; }
+        .mt-calc-panel { right: 0.85rem; bottom: 4.15rem; width: 232px; }
       }
     `}</style>
   );
@@ -766,6 +882,7 @@ function ConfigureScreen({ paper, onBack, onStart }) {
   const [useQuestionTiming, setUseQuestionTiming] = useState(false);
   const [questionSeconds, setQuestionSeconds] = useState(90);
   const [negativeMarking, setNegativeMarking] = useState(0);
+  const [calculatorEnabled, setCalculatorEnabled] = useState(false);
 
   const sectionSum = paper.sections.reduce((n, s) => n + (sectionMinutes[s.id] || 0), 0);
 
@@ -830,6 +947,17 @@ function ConfigureScreen({ paper, onBack, onStart }) {
           </div>
         </div>
 
+        <div className="mt-card p-5 mb-4">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={calculatorEnabled} onChange={(e) => setCalculatorEnabled(e.target.checked)} />
+            <span className="mt-seal" style={{ width: '2.1rem', height: '2.1rem' }}><Calculator size={15} /></span>
+            <span>
+              <span className="mt-label block">Virtual calculator</span>
+              <span className="text-sm" style={{ color: 'var(--ink-soft)' }}>Allow a simple on-screen calculator (+ − × ÷) during this test</span>
+            </span>
+          </label>
+        </div>
+
         <div className="fixed bottom-0 left-0 right-0 border-t mt-hairline p-4" style={{ background: 'var(--paper)' }}>
           <div className="max-w-2xl w-full mx-auto flex items-center justify-between">
             <button className="mt-btn mt-btn-ghost" onClick={onBack}><ChevronLeft size={15} /> Back</button>
@@ -838,7 +966,7 @@ function ConfigureScreen({ paper, onBack, onStart }) {
               onClick={() => {
                 enterFullscreen();
                 onStart({
-                  totalMinutes, useSectionTiming, sectionMinutes, useQuestionTiming, questionSeconds, negativeMarking
+                  totalMinutes, useSectionTiming, sectionMinutes, useQuestionTiming, questionSeconds, negativeMarking, calculatorEnabled
                 });
               }}
             >
@@ -1013,6 +1141,152 @@ function exitFullscreen() {
   if (exit) {
     try { exit.call(document).catch(() => {}); } catch (e) { /* ignore */ }
   }
+}
+
+/* ============================================================
+   VIRTUAL CALCULATOR — floating launcher + popover shown during
+   the test, only when the candidate enabled it at setup time.
+   Basic simple-operation calculator (+ − × ÷, decimal, clear).
+   ============================================================ */
+
+// Only digits, the four basic operators, decimal points and spaces are ever
+// allowed through to the evaluator — anything else is rejected outright, so
+// there's no way for arbitrary code to reach the Function constructor below.
+const CALC_SAFE_EXPR = /^[0-9+\-*/.\s]*$/;
+
+function calcLastSegment(expr) {
+  const parts = expr.split(/[+\-*/]/);
+  return parts[parts.length - 1];
+}
+
+function calcEvaluate(expr) {
+  if (!expr || !CALC_SAFE_EXPR.test(expr)) throw new Error('invalid expression');
+  // Strip a trailing operator (e.g. user hits "=" right after "12+") so
+  // evaluation doesn't blow up on an incomplete expression.
+  const clean = expr.replace(/[+\-*/.]+$/, (m) => (m.includes('.') ? m : ''));
+  if (!clean) throw new Error('empty expression');
+  // eslint-disable-next-line no-new-func
+  const result = Function(`"use strict"; return (${clean});`)();
+  if (typeof result !== 'number' || !isFinite(result)) throw new Error('bad result');
+  // Round away float noise (e.g. 0.1 + 0.2) while keeping real precision.
+  return Math.round((result + Number.EPSILON) * 1e10) / 1e10;
+}
+
+function CalculatorWidget() {
+  const [open, setOpen] = useState(false);
+  const [expr, setExpr] = useState('');
+  const [justEvaluated, setJustEvaluated] = useState(false);
+  const [errored, setErrored] = useState(false);
+
+  const display = errored ? 'Error' : (expr || '0');
+
+  const press = (val) => {
+    if (val === 'AC') {
+      setExpr(''); setJustEvaluated(false); setErrored(false);
+      return;
+    }
+    if (val === 'DEL') {
+      if (errored) { setExpr(''); setErrored(false); return; }
+      if (justEvaluated) return; // don't backspace into a freshly computed result
+      setExpr((e) => e.slice(0, -1));
+      return;
+    }
+    if (val === '=') {
+      try {
+        const result = calcEvaluate(expr);
+        setExpr(String(result));
+        setJustEvaluated(true);
+        setErrored(false);
+      } catch (e) {
+        setErrored(true);
+        setJustEvaluated(false);
+      }
+      return;
+    }
+
+    const isOperator = ['+', '-', '*', '/'].includes(val);
+
+    if (errored) {
+      // Any key after an error starts a fresh expression.
+      setErrored(false);
+      setExpr(isOperator ? '' : val);
+      setJustEvaluated(false);
+      return;
+    }
+
+    setExpr((e) => {
+      if (justEvaluated) {
+        setJustEvaluated(false);
+        if (isOperator) return e + val; // chain another operation onto the result
+        return val === '.' ? '0.' : val;  // start a brand-new number
+      }
+      if (val === '.') {
+        // No second decimal point within the current number segment.
+        if (calcLastSegment(e).includes('.')) return e;
+        return e === '' ? '0.' : e + '.';
+      }
+      if (isOperator) {
+        if (e === '') return val === '-' ? '-' : e; // only "-" may lead
+        if (/[+\-*/]$/.test(e)) return e.slice(0, -1) + val; // swap trailing operator
+        return e + val;
+      }
+      return e + val;
+    });
+  };
+
+  return (
+    <>
+      <button
+        className={`mt-calc-fab ${open ? 'open' : ''}`}
+        onClick={() => setOpen((o) => !o)}
+        title={open ? 'Close calculator' : 'Open calculator'}
+        aria-label={open ? 'Close calculator' : 'Open calculator'}
+      >
+        {open ? <X size={20} /> : <Calculator size={20} />}
+      </button>
+
+      {open && (
+        <div className="mt-calc-panel mt-fade-in">
+          <div className="mt-calc-head">
+            <span className="mt-calc-title"><Calculator size={13} /> Calculator</span>
+            <button className="mt-calc-close" onClick={() => setOpen(false)} aria-label="Close calculator"><X size={15} /></button>
+          </div>
+          <div className="mt-calc-display">{display}</div>
+          <div className="mt-calc-body">
+            <div className="mt-calc-row">
+              <button className="mt-calc-btn clear" onClick={() => press('AC')}>AC</button>
+              <button className="mt-calc-btn clear" onClick={() => press('DEL')}><Delete size={16} /></button>
+              <button className="mt-calc-btn op" onClick={() => press('%')}>%</button>
+              <button className="mt-calc-btn op" onClick={() => press('/')}>÷</button>
+            </div>
+            <div className="mt-calc-row">
+              <button className="mt-calc-btn" onClick={() => press('7')}>7</button>
+              <button className="mt-calc-btn" onClick={() => press('8')}>8</button>
+              <button className="mt-calc-btn" onClick={() => press('9')}>9</button>
+              <button className="mt-calc-btn op" onClick={() => press('*')}>×</button>
+            </div>
+            <div className="mt-calc-row">
+              <button className="mt-calc-btn" onClick={() => press('4')}>4</button>
+              <button className="mt-calc-btn" onClick={() => press('5')}>5</button>
+              <button className="mt-calc-btn" onClick={() => press('6')}>6</button>
+              <button className="mt-calc-btn op" onClick={() => press('-')}>−</button>
+            </div>
+            <div className="mt-calc-row">
+              <button className="mt-calc-btn" onClick={() => press('1')}>1</button>
+              <button className="mt-calc-btn" onClick={() => press('2')}>2</button>
+              <button className="mt-calc-btn" onClick={() => press('3')}>3</button>
+              <button className="mt-calc-btn op" onClick={() => press('+')}>+</button>
+            </div>
+            <div className="mt-calc-row">
+              <button className="mt-calc-btn zero" onClick={() => press('0')}>0</button>
+              <button className="mt-calc-btn" onClick={() => press('.')}>.</button>
+              <button className="mt-calc-btn equals" onClick={() => press('=')}>=</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 function TestScreen({ paper, config, onFinish }) {
@@ -1227,6 +1501,8 @@ function TestScreen({ paper, config, onFinish }) {
           </div>
         </div>
       )}
+
+      {state.config.calculatorEnabled && <CalculatorWidget />}
     </div>
   );
 }
