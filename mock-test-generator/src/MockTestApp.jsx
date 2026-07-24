@@ -207,7 +207,7 @@ function GlobalStyles() {
       }
       .mt-site-header {
         flex-shrink: 0;
-        height: 4.75rem;
+        height: 5.5rem;
         display: flex;
         align-items: center;
         gap: 0.9rem;
@@ -224,26 +224,11 @@ function GlobalStyles() {
         border: 2px solid var(--brass);
         box-shadow: 0 2px 6px rgba(28,37,65,0.15);
       }
-      .mt-site-header .mt-brand-name {
-        font-family: 'Pacifico', 'Source Serif 4', cursive;
-        font-weight: 400;
-        font-size: 2rem;
-        line-height: 1;
-        letter-spacing: 0.01em;
-        background: linear-gradient(90deg, var(--ink) 0%, var(--brass) 100%);
-        -webkit-background-clip: text;
-        background-clip: text;
-        -webkit-text-fill-color: transparent;
-        display: inline-block;
-      }
-      .mt-site-header .mt-brand-tag {
-        font-family: 'IBM Plex Sans', sans-serif;
-        font-size: 0.66rem;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-        color: var(--ink-soft);
-        font-weight: 600;
-        margin-top: 0.15rem;
+      .mt-brandmark {
+        height: 4.6rem;
+        width: auto;
+        display: block;
+        flex-shrink: 0;
       }
       .mt-stage-area {
         flex: 1 1 auto;
@@ -254,6 +239,9 @@ function GlobalStyles() {
       @media (max-width: 480px) {
         .mt-btn { padding: 0.55rem 0.7rem; font-size: 0.8rem; gap: 0.3rem; }
         .mt-bubble { width: 2.1rem; height: 2.1rem; font-size: 0.75rem; }
+        .mt-site-header { height: 4.6rem; padding: 0 0.85rem; gap: 0.6rem; }
+        .mt-site-header img { height: 2.8rem; width: 2.8rem; }
+        .mt-brandmark { height: 3.6rem; }
       }
     `}</style>
   );
@@ -1461,11 +1449,49 @@ function SiteHeader() {
   return (
     <header className="mt-site-header">
       <img src={`${process.env.PUBLIC_URL}/mocksy-logo.jpg`} alt="Mocksy logo" />
-      <div>
-        <div className="mt-brand-name">Mocksy</div>
-        <div className="mt-brand-tag">Mock Test Generator</div>
-      </div>
+      <BrandMark />
     </header>
+  );
+}
+
+function BrandMark() {
+  return (
+    <svg
+      viewBox="0 0 250 100"
+      className="mt-brandmark"
+      role="img"
+      aria-label="Mocksy - Mock Test Generator"
+    >
+      <defs>
+        <linearGradient id="mocksyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="var(--ink)" />
+          <stop offset="100%" stopColor="var(--brass)" />
+        </linearGradient>
+      </defs>
+      {/* swash flowing off the tail of the 'y', curling right then under */}
+      <path
+        d="M174,34 C210,24 236,38 238,56 C240,77 200,87 146,87 C92,87 44,87 16,80"
+        fill="none"
+        stroke="url(#mocksyGrad)"
+        strokeWidth="3"
+        strokeLinecap="round"
+        opacity="0.85"
+      />
+      <text x="2" y="50" fontFamily="'Pacifico', cursive" fontSize="44" fill="url(#mocksyGrad)">
+        Mocksy
+      </text>
+      <text
+        x="18"
+        y="77"
+        fontFamily="'IBM Plex Sans', sans-serif"
+        fontSize="8.5"
+        fontWeight="600"
+        letterSpacing="1.6"
+        fill="var(--ink-soft)"
+      >
+        MOCK TEST GENERATOR
+      </text>
+    </svg>
   );
 }
 
