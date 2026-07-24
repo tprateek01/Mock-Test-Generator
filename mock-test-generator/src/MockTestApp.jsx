@@ -188,14 +188,58 @@ function GlobalStyles() {
       .mt-option-row:hover { border-color: var(--ink-faint); }
       .mt-option-row.selected { border-color: var(--ink); background: var(--paper-dim); }
 
-      /* Locks a screen to the viewport height so header/footer stay put
+      /* Locks a screen to the height of its container (the app shell's
+         content area, below the site header) so header/footer stay put
          and only the inner content region scrolls. */
       .mt-viewport-fixed {
-        height: 100vh;
-        height: 100dvh;
+        height: 100%;
         overflow: hidden;
         display: flex;
         flex-direction: column;
+      }
+
+      /* Top-level app shell: site header + scrollable/fixed stage area */
+      .mt-app-shell {
+        height: 100vh;
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+      }
+      .mt-site-header {
+        flex-shrink: 0;
+        height: 3.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        padding: 0 1rem;
+        background: var(--paper);
+        border-bottom: 1px solid var(--rule);
+      }
+      .mt-site-header img {
+        height: 2.35rem;
+        width: 2.35rem;
+        object-fit: cover;
+        border-radius: 7px;
+        flex-shrink: 0;
+      }
+      .mt-site-header .mt-brand-name {
+        font-family: 'Source Serif 4', Georgia, serif;
+        font-weight: 700;
+        font-size: 1.15rem;
+        line-height: 1.1;
+        color: var(--ink);
+      }
+      .mt-site-header .mt-brand-tag {
+        font-size: 0.62rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ink-soft);
+        font-weight: 600;
+      }
+      .mt-stage-area {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
       }
 
       @media (max-width: 480px) {
@@ -1402,6 +1446,21 @@ function StatCard({ label, value, color }) {
 }
 
 /* ============================================================
+   SITE HEADER — logo + brand name, shown on every screen
+   ============================================================ */
+function SiteHeader() {
+  return (
+    <header className="mt-site-header">
+      <img src={`${process.env.PUBLIC_URL}/mocksy-logo.jpg`} alt="Mocksy logo" />
+      <div>
+        <div className="mt-brand-name">Mocksy</div>
+        <div className="mt-brand-tag">Mock Test Generator</div>
+      </div>
+    </header>
+  );
+}
+
+/* ============================================================
    ROOT APP — exported as MockTestApp
    ============================================================ */
 export default function MockTestApp() {
@@ -1413,23 +1472,26 @@ export default function MockTestApp() {
   const reset = () => { setStage('upload'); setPaper(null); setConfig(null); setFinalState(null); };
 
   return (
-    <div className="mt-root">
+    <div className="mt-root mt-app-shell">
       <GlobalStyles />
-      {stage === 'upload' && (
-        <UploadScreen onExtracted={(p) => { setPaper(p); setStage('review'); }} />
-      )}
-      {stage === 'review' && paper && (
-        <ReviewScreen paper={paper} setPaper={setPaper} onBack={() => setStage('upload')} onContinue={() => setStage('configure')} />
-      )}
-      {stage === 'configure' && paper && (
-        <ConfigureScreen paper={paper} onBack={() => setStage('review')} onStart={(cfg) => { setConfig(cfg); setStage('test'); }} />
-      )}
-      {stage === 'test' && paper && config && (
-        <TestScreen paper={paper} config={config} onFinish={(st) => { setFinalState(st); setStage('results'); }} />
-      )}
-      {stage === 'results' && finalState && (
-        <ResultsScreen state={finalState} onRestart={reset} />
-      )}
+      <SiteHeader />
+      <div className="mt-stage-area">
+        {stage === 'upload' && (
+          <UploadScreen onExtracted={(p) => { setPaper(p); setStage('review'); }} />
+        )}
+        {stage === 'review' && paper && (
+          <ReviewScreen paper={paper} setPaper={setPaper} onBack={() => setStage('upload')} onContinue={() => setStage('configure')} />
+        )}
+        {stage === 'configure' && paper && (
+          <ConfigureScreen paper={paper} onBack={() => setStage('review')} onStart={(cfg) => { setConfig(cfg); setStage('test'); }} />
+        )}
+        {stage === 'test' && paper && config && (
+          <TestScreen paper={paper} config={config} onFinish={(st) => { setFinalState(st); setStage('results'); }} />
+        )}
+        {stage === 'results' && finalState && (
+          <ResultsScreen state={finalState} onRestart={reset} />
+        )}
+      </div>
     </div>
   );
 }
