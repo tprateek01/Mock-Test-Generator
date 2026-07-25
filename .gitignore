@@ -3,6 +3,8 @@ server/node_modules/
 server/.env
 server/.env.local
 server/*.log
+server/visitors.json
+server/visitors.json
 
 # Frontend (in case its own .gitignore is missing anything)
 mock-test-generator/node_modules/

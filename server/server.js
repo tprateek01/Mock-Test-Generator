@@ -15,6 +15,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 // In production, set ALLOWED_ORIGIN to your deployed frontend's URL (e.g. https://your-app.vercel.app).
@@ -91,6 +93,42 @@ app.post('/api/gemini', async (req, res) => {
   } catch (err) {
     console.error('Proxy error:', err);
     res.status(500).json({ error: 'Failed to reach Gemini API' });
+  }
+});
+
+// ------------------------------------------------------------------
+// Visitor counter
+// Very small file-based counter: every call bumps the number stored
+// in visitors.json by 1 and returns the new total. The frontend calls
+// this once on mount, so the count goes up on every page load/reload.
+// Good enough for a small project — for real traffic you'd want a
+// proper database instead of a JSON file.
+// ------------------------------------------------------------------
+const VISITORS_FILE = path.join(__dirname, 'visitors.json');
+
+function readVisitorCount() {
+  try {
+    const raw = fs.readFileSync(VISITORS_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    return Number.isFinite(data.count) ? data.count : 0;
+  } catch (err) {
+    // File doesn't exist yet (first run) or is unreadable — start from 0.
+    return 0;
+  }
+}
+
+function writeVisitorCount(count) {
+  fs.writeFileSync(VISITORS_FILE, JSON.stringify({ count }), 'utf8');
+}
+
+app.get('/api/visitors', (req, res) => {
+  try {
+    const count = readVisitorCount() + 1;
+    writeVisitorCount(count);
+    res.json({ count });
+  } catch (err) {
+    console.error('Visitor counter error:', err);
+    res.status(500).json({ error: 'Failed to update visitor count' });
   }
 });
 
