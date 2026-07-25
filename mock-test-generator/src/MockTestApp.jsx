@@ -280,6 +280,7 @@ function GlobalStyles() {
       .mt-calc-fab:hover { filter: brightness(1.2); }
       .mt-calc-fab:active { transform: scale(0.94); }
       .mt-calc-fab.open { background: var(--brass); }
+      .mt-calc-fab:disabled { opacity: 0.45; cursor: not-allowed; }
 
       .mt-calc-panel {
         position: absolute;
@@ -402,6 +403,15 @@ function GlobalStyles() {
 let _id = 0;
 const uid = (p = 'x') => `${p}_${Date.now().toString(36)}_${(_id++).toString(36)}`;
 
+// negativeMarking on config is an object keyed by question type, e.g. { mcq: 0.33, msq: 0, numeric: 0, short: 0 }.
+// Falls back gracefully if it's ever just a plain number (older config shape).
+function getNegativeMarking(config, type) {
+  const nm = config && config.negativeMarking;
+  if (nm == null) return 0;
+  if (typeof nm === 'number') return nm;
+  return nm[type] || 0;
+}
+
 function fmtClock(totalSeconds) {
   const s = Math.max(0, Math.round(totalSeconds));
   const h = Math.floor(s / 3600);
@@ -467,13 +477,13 @@ function parseJsonLoose(text) {
 const EXTRACTION_SYSTEM = `You extract exam questions from a source document into strict JSON. Output ONLY minified JSON — no markdown fences, no commentary, no preamble.
 
 Schema:
-{"title":"string","totalQuestionsInSource":number|null,"sections":[{"name":"string","questions":[{"type":"mcq|numeric|short|descriptive","text":"string","options":["string"]|null,"marks":number,"correctAnswer":"string"|null}]}],"complete":boolean}
+{"title":"string","totalQuestionsInSource":number|null,"sections":[{"name":"string","questions":[{"type":"mcq|msq|numeric|short|descriptive","text":"string","options":["string"]|null,"marks":number,"correctAnswer":"string"|["string"]|null}]}],"complete":boolean}
 
 Rules:
-- "mcq" = multiple choice with options. "numeric" = requires a numeric answer, no options. "short" = brief word/phrase/one-line answer. "descriptive" = long-form written answer.
-- options: array of option text WITHOUT letter/number labels (e.g. "Paris", not "A) Paris"). Only for mcq, else null.
+- "mcq" = multiple choice, exactly ONE correct option. "msq" = multiple SELECT, TWO OR MORE correct options (common in GATE-style papers, often marked "one or more options may be correct"). "numeric" = requires a numeric answer, no options. "short" = brief word/phrase/one-line answer. "descriptive" = long-form written answer.
+- options: array of option text WITHOUT letter/number labels (e.g. "Paris", not "A) Paris"). Only for mcq/msq, else null.
 - marks: marks stated in the source if present, else default to 1.
-- correctAnswer: fill in ONLY if an answer key is clearly present in the source; for mcq, give the exact option text. Never invent an answer — use null if unsure.
+- correctAnswer: fill in ONLY if an answer key is clearly present in the source. For mcq, give the exact option text as a single string. For msq, give an ARRAY of the exact option text(s) marked correct (even if only one is marked in the source, still use an array for msq). Never invent an answer — use null if unsure.
 - Group questions under their section headings exactly as they appear (e.g. "Section A", "Physics", "Part I"). If there are no explicit sections, use one section named "Section 1".
 - Preserve original question order.
 - totalQuestionsInSource: on your FIRST response only, scan the whole source (page numbers, question numbering, "Q1..Q100" style headers, table of contents, etc.) and give your best-effort count of the TOTAL number of questions the source actually contains, even though you will only extract a partial batch in this response. This is a sanity check used to make sure nothing gets missed later — take it seriously and base it on real evidence in the document (highest question number visible, explicit counts stated, etc.), not a guess. On later continuation responses, repeat the same number (or refine it if you now have better evidence), or null if truly unknowable.
@@ -536,13 +546,24 @@ async function extractQuestions(sourceParts, onProgress) {
       let existing = sections.find(s => s.name === sec.name);
       if (!existing) { existing = { id: uid('sec'), name: sec.name, questions: [] }; sections.push(existing); }
       (sec.questions || []).forEach(q => {
+        const type = ['mcq', 'msq', 'numeric', 'short', 'descriptive'].includes(q.type) ? q.type : 'short';
+        let correctAnswer = q.correctAnswer || null;
+        if (type === 'msq') {
+          // Always store msq answers as an array, even if the model gave a single string.
+          if (Array.isArray(correctAnswer)) correctAnswer = correctAnswer.filter(Boolean);
+          else if (correctAnswer) correctAnswer = [correctAnswer];
+          if (correctAnswer && !correctAnswer.length) correctAnswer = null;
+        } else if (Array.isArray(correctAnswer)) {
+          // Defensive: model shouldn't send an array for non-msq types, but if it does, take the first value.
+          correctAnswer = correctAnswer[0] || null;
+        }
         existing.questions.push({
           id: uid('q'),
-          type: ['mcq', 'numeric', 'short', 'descriptive'].includes(q.type) ? q.type : 'short',
+          type,
           text: q.text || '',
-          options: q.type === 'mcq' && Array.isArray(q.options) ? q.options : null,
+          options: (type === 'mcq' || type === 'msq') && Array.isArray(q.options) ? q.options : null,
           marks: typeof q.marks === 'number' && q.marks > 0 ? q.marks : 1,
-          correctAnswer: q.correctAnswer || null
+          correctAnswer
         });
       });
     });
@@ -832,6 +853,12 @@ function QuestionEditRow({ q, index, onChange, onRemove }) {
     options.splice(i, 1);
     onChange({ options });
   };
+  const toggleMsqCorrect = (opt) => {
+    if (!opt) return;
+    const current = Array.isArray(q.correctAnswer) ? q.correctAnswer : [];
+    const next = current.includes(opt) ? current.filter(o => o !== opt) : [...current, opt];
+    onChange({ correctAnswer: next });
+  };
 
   return (
     <div className="border rounded p-3" style={{ borderColor: 'var(--rule)' }}>
@@ -841,8 +868,21 @@ function QuestionEditRow({ q, index, onChange, onRemove }) {
         <button className="mt-btn mt-btn-danger" onClick={onRemove} title="Remove question"><Trash2 size={13} /></button>
       </div>
       <div className="flex flex-wrap items-center gap-2 mb-2 pl-7">
-        <select className="mt-select w-auto" value={q.type} onChange={(e) => onChange({ type: e.target.value, options: e.target.value === 'mcq' ? (q.options && q.options.length ? q.options : ['', '', '', '']) : null })}>
-          <option value="mcq">Multiple choice</option>
+        <select
+          className="mt-select w-auto"
+          value={q.type}
+          onChange={(e) => {
+            const newType = e.target.value;
+            const keepsOptions = newType === 'mcq' || newType === 'msq';
+            onChange({
+              type: newType,
+              options: keepsOptions ? (q.options && q.options.length ? q.options : ['', '', '', '']) : null,
+              correctAnswer: newType === 'msq' ? (Array.isArray(q.correctAnswer) ? q.correctAnswer : []) : (Array.isArray(q.correctAnswer) ? null : q.correctAnswer)
+            });
+          }}
+        >
+          <option value="mcq">Multiple choice (MCQ — single correct)</option>
+          <option value="msq">Multiple select (MSQ — one or more correct)</option>
           <option value="numeric">Numeric answer</option>
           <option value="short">Short answer</option>
           <option value="descriptive">Descriptive</option>
@@ -853,23 +893,29 @@ function QuestionEditRow({ q, index, onChange, onRemove }) {
         </label>
       </div>
 
-      {q.type === 'mcq' && (
+      {(q.type === 'mcq' || q.type === 'msq') && (
         <div className="pl-7 space-y-1.5 mb-2">
-          {(q.options || []).map((opt, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <button
-                className="mt-radio flex-shrink-0"
-                style={q.correctAnswer === opt && opt ? { borderColor: 'var(--answered)' } : {}}
-                onClick={() => onChange({ correctAnswer: opt })}
-                title="Mark as correct answer"
-              >
-                {q.correctAnswer === opt && opt ? <Check size={11} style={{ color: 'var(--answered)' }} /> : null}
-              </button>
-              <input className="mt-input flex-1" placeholder={`Option ${i + 1}`} value={opt} onChange={(e) => updateOption(i, e.target.value)} />
-              <button className="text-xs" style={{ color: 'var(--ink-faint)' }} onClick={() => removeOption(i)}><X size={13} /></button>
-            </div>
-          ))}
+          {(q.options || []).map((opt, i) => {
+            const isCorrect = q.type === 'msq'
+              ? Array.isArray(q.correctAnswer) && opt && q.correctAnswer.includes(opt)
+              : q.correctAnswer === opt && opt;
+            return (
+              <div key={i} className="flex items-center gap-2">
+                <button
+                  className="mt-radio flex-shrink-0"
+                  style={{ borderRadius: q.type === 'msq' ? '4px' : '999px', ...(isCorrect ? { borderColor: 'var(--answered)' } : {}) }}
+                  onClick={() => q.type === 'msq' ? toggleMsqCorrect(opt) : onChange({ correctAnswer: opt })}
+                  title="Mark as correct answer"
+                >
+                  {isCorrect ? <Check size={11} style={{ color: 'var(--answered)' }} /> : null}
+                </button>
+                <input className="mt-input flex-1" placeholder={`Option ${i + 1}`} value={opt} onChange={(e) => updateOption(i, e.target.value)} />
+                <button className="text-xs" style={{ color: 'var(--ink-faint)' }} onClick={() => removeOption(i)}><X size={13} /></button>
+              </div>
+            );
+          })}
           <button className="text-xs mt-1" style={{ color: 'var(--brass)' }} onClick={addOption}>+ add option</button>
+          {q.type === 'msq' && <div className="text-xs" style={{ color: 'var(--ink-faint)' }}>Click the box next to each correct option — more than one can be correct.</div>}
         </div>
       )}
       {(q.type === 'numeric' || q.type === 'short') && (
@@ -900,7 +946,21 @@ function ConfigureScreen({ paper, onBack, onStart }) {
   });
   const [useQuestionTiming, setUseQuestionTiming] = useState(false);
   const [questionSeconds, setQuestionSeconds] = useState(90);
-  const [negativeMarking, setNegativeMarking] = useState(0);
+
+  // Negative marking is configurable per question type, since exams commonly
+  // penalize MCQ/MSQ/numeric wrong answers differently (e.g. GATE: -1/3 for
+  // 1-mark MCQ, 0 for MSQ and numeric).
+  const QUESTION_TYPE_LABELS = { mcq: 'MCQ (single correct)', msq: 'MSQ (multiple correct)', numeric: 'Numeric answer', short: 'Short answer' };
+  const typesPresent = useMemo(() => {
+    const set = new Set();
+    paper.sections.forEach(s => s.questions.forEach(q => set.add(q.type)));
+    return ['mcq', 'msq', 'numeric', 'short'].filter(t => set.has(t));
+  }, [paper]);
+  const [negativeMarking, setNegativeMarking] = useState(() => {
+    const nm = {};
+    ['mcq', 'msq', 'numeric', 'short'].forEach(t => { nm[t] = 0; });
+    return nm;
+  });
   const [calculatorEnabled, setCalculatorEnabled] = useState(false);
 
   const sectionSum = paper.sections.reduce((n, s) => n + (sectionMinutes[s.id] || 0), 0);
@@ -959,11 +1019,25 @@ function ConfigureScreen({ paper, onBack, onStart }) {
         </div>
 
         <div className="mt-card p-5 mb-4">
-          <div className="mt-label mb-2">Negative marking</div>
-          <div className="flex items-center gap-3">
-            <input type="number" min={0} step={0.25} className="mt-input w-24" value={negativeMarking} onChange={(e) => setNegativeMarking(parseFloat(e.target.value) || 0)} />
-            <span className="text-sm" style={{ color: 'var(--ink-soft)' }}>marks deducted for each wrong objective answer (0 = off)</span>
-          </div>
+          <div className="mt-label mb-1">Negative marking</div>
+          <div className="text-xs mb-3" style={{ color: 'var(--ink-soft)' }}>Marks deducted for each wrong answer — set separately per question type (0 = off).</div>
+          {typesPresent.length === 0 ? (
+            <div className="text-xs" style={{ color: 'var(--ink-faint)' }}>No auto-gradable question types (MCQ/MSQ/numeric/short) in this paper.</div>
+          ) : (
+            <div className="space-y-2">
+              {typesPresent.map(t => (
+                <div key={t} className="flex items-center gap-3">
+                  <span className="text-sm flex-1">{QUESTION_TYPE_LABELS[t]}</span>
+                  <input
+                    type="number" min={0} step={0.25} className="mt-input w-24"
+                    value={negativeMarking[t]}
+                    onChange={(e) => setNegativeMarking({ ...negativeMarking, [t]: parseFloat(e.target.value) || 0 })}
+                  />
+                  <span className="text-xs" style={{ color: 'var(--ink-faint)' }}>marks off</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="mt-card p-5 mb-4">
@@ -1051,6 +1125,18 @@ function testReducer(state, action) {
       const cur = state.status[qid];
       const nextStatus = cur === 'marked' || cur === 'answered-marked' ? 'answered-marked' : 'answered';
       return { ...state, answers: { ...state.answers, [qid]: action.value }, status: { ...state.status, [qid]: nextStatus } };
+    }
+    case 'TOGGLE_MSQ_OPTION': {
+      const qid = state.flatQuestions[state.currentIndex].id;
+      const cur = state.status[qid];
+      const existing = Array.isArray(state.answers[qid]) ? state.answers[qid] : [];
+      const next = existing.includes(action.value) ? existing.filter(o => o !== action.value) : [...existing, action.value];
+      const answers = { ...state.answers };
+      if (next.length) answers[qid] = next; else delete answers[qid];
+      const nextStatus = next.length
+        ? (cur === 'marked' || cur === 'answered-marked' ? 'answered-marked' : 'answered')
+        : (cur === 'answered-marked' ? 'marked' : 'not-answered');
+      return { ...state, answers, status: { ...state.status, [qid]: nextStatus } };
     }
     case 'CLEAR': {
       const qid = state.flatQuestions[state.currentIndex].id;
@@ -1211,11 +1297,18 @@ const CALC_SCI_FNS = {
   antilog: (x) => Math.pow(10, x),
 };
 
-function CalculatorWidget() {
+function CalculatorWidget({ hidden }) {
   const [open, setOpen] = useState(false);
   const [expr, setExpr] = useState('');
   const [justEvaluated, setJustEvaluated] = useState(false);
   const [errored, setErrored] = useState(false);
+
+  // When the mobile question palette drawer opens, close the calculator dropdown
+  // (if open) and drop the whole widget behind the drawer, rather than letting it
+  // float on top of it.
+  useEffect(() => {
+    if (hidden) setOpen(false);
+  }, [hidden]);
 
   const display = errored ? 'Error' : (expr || '0');
 
@@ -1289,12 +1382,13 @@ function CalculatorWidget() {
   };
 
   return (
-    <div className="mt-calc-wrap">
+    <div className="mt-calc-wrap" style={hidden ? { zIndex: 30, position: 'relative' } : undefined}>
       <button
         className={`mt-calc-fab ${open ? 'open' : ''}`}
         onClick={() => setOpen((o) => !o)}
         title={open ? 'Close calculator' : 'Open calculator'}
         aria-label={open ? 'Close calculator' : 'Open calculator'}
+        disabled={hidden}
       >
         {open ? <X size={18} /> : <Calculator size={18} />}
       </button>
@@ -1434,7 +1528,7 @@ function TestScreen({ paper, config, onFinish }) {
               </div>
             </div>
           )}
-          {state.config.calculatorEnabled && <CalculatorWidget />}
+          {state.config.calculatorEnabled && <CalculatorWidget hidden={showPaletteMobile} />}
           <div className="text-right">
             <div className="mt-label" style={{ fontSize: '0.62rem' }}>Time left</div>
             <div className={`mt-flip mt-mono text-base md:text-xl ${overallCritical ? 'mt-pulse' : ''}`} style={{ color: overallCritical ? 'var(--alert)' : 'var(--ink)' }}>
@@ -1477,7 +1571,14 @@ function TestScreen({ paper, config, onFinish }) {
                 {q.text}
               </div>
             </div>
-            <div className="text-xs mb-5" style={{ color: 'var(--ink-faint)' }}>{q.marks} mark{q.marks === 1 ? '' : 's'}{state.config.negativeMarking > 0 && (q.type === 'mcq' || q.type === 'numeric') ? ` · −${state.config.negativeMarking} if wrong` : ''}</div>
+            <div className="text-xs mb-5" style={{ color: 'var(--ink-faint)' }}>
+              {q.marks} mark{q.marks === 1 ? '' : 's'}
+              {(() => {
+                const nm = getNegativeMarking(state.config, q.type);
+                return nm > 0 ? ` · −${nm} if wrong` : '';
+              })()}
+              {q.type === 'msq' ? ' · one or more options may be correct' : ''}
+            </div>
 
             {q.type === 'mcq' && (
               <div className="space-y-2">
@@ -1487,6 +1588,21 @@ function TestScreen({ paper, config, onFinish }) {
                     <span className="text-sm">{String.fromCharCode(65 + i)}. {opt}</span>
                   </div>
                 ))}
+              </div>
+            )}
+            {q.type === 'msq' && (
+              <div className="space-y-2">
+                {(q.options || []).map((opt, i) => {
+                  const selected = Array.isArray(answer) && answer.includes(opt);
+                  return (
+                    <div key={i} className={`mt-option-row ${selected ? 'selected' : ''}`} onClick={() => !isLocked && dispatch({ type: 'TOGGLE_MSQ_OPTION', value: opt })}>
+                      <div className="mt-radio" style={{ borderRadius: '4px' }}>
+                        {selected ? <Check size={11} style={{ color: 'var(--ink)' }} /> : null}
+                      </div>
+                      <span className="text-sm">{String.fromCharCode(65 + i)}. {opt}</span>
+                    </div>
+                  );
+                })}
               </div>
             )}
             {q.type === 'numeric' && (
@@ -1634,6 +1750,23 @@ function normalize(v) {
   return (v ?? '').toString().trim().toLowerCase();
 }
 
+function hasRealAnswer(q, ans) {
+  if (q.type === 'msq') return Array.isArray(ans) && ans.length > 0;
+  return ans !== undefined && ans !== '' && ans !== null;
+}
+
+// For msq, correctness requires the selected set to exactly match the correct
+// set (all correct options chosen, no incorrect ones) — the standard GATE/SSC rule.
+function answerIsCorrect(q, ans) {
+  if (q.type === 'msq') {
+    if (!Array.isArray(ans) || !Array.isArray(q.correctAnswer)) return false;
+    const a = Array.from(new Set(ans.map(normalize))).sort();
+    const b = Array.from(new Set(q.correctAnswer.map(normalize))).sort();
+    return a.length === b.length && a.every((v, i) => v === b[i]);
+  }
+  return normalize(ans) === normalize(q.correctAnswer);
+}
+
 // Formats a score to up to 3 decimal places, trimming trailing zeros
 // (7 -> "7", 7.5 -> "7.5", 7.256 -> "7.256") and fixing float precision
 // artifacts from repeated negative-marking subtraction (e.g. 6.999999999).
@@ -1649,8 +1782,9 @@ function gradeTest(state) {
 
   state.flatQuestions.forEach((q, idx) => {
     const ans = state.answers[q.id];
-    const hasAnswer = ans !== undefined && ans !== '' && ans !== null;
-    const gradable = (q.type === 'mcq' || q.type === 'numeric') && q.correctAnswer;
+    const hasAnswer = hasRealAnswer(q, ans);
+    const hasCorrectAnswer = q.type === 'msq' ? Array.isArray(q.correctAnswer) && q.correctAnswer.length > 0 : !!q.correctAnswer;
+    const gradable = (q.type === 'mcq' || q.type === 'msq' || q.type === 'numeric') && hasCorrectAnswer;
     let verdict = 'ungraded';
 
     if (gradable) {
@@ -1658,20 +1792,20 @@ function gradeTest(state) {
       if (!hasAnswer) {
         unansweredObjective++;
         verdict = 'unanswered';
-      } else if (normalize(ans) === normalize(q.correctAnswer)) {
+      } else if (answerIsCorrect(q, ans)) {
         obtained += q.marks;
         correctCount++;
         verdict = 'correct';
       } else {
-        obtained -= state.config.negativeMarking || 0;
+        obtained -= getNegativeMarking(state.config, q.type);
         wrongCount++;
         verdict = 'wrong';
       }
     } else if (q.type === 'short' && q.correctAnswer) {
       maxObjective += q.marks;
       if (!hasAnswer) { unansweredObjective++; verdict = 'unanswered'; }
-      else if (normalize(ans) === normalize(q.correctAnswer)) { obtained += q.marks; correctCount++; verdict = 'correct'; }
-      else { wrongCount++; verdict = 'wrong'; needsReview.push(q); }
+      else if (answerIsCorrect(q, ans)) { obtained += q.marks; correctCount++; verdict = 'correct'; }
+      else { obtained -= getNegativeMarking(state.config, q.type); wrongCount++; verdict = 'wrong'; needsReview.push(q); }
     } else {
       needsReview.push(q);
     }
@@ -1760,8 +1894,12 @@ function ResultsScreen({ state, onRestart }) {
           {filtered.map((q) => {
             const idx = state.flatQuestions.findIndex(fq => fq.id === q.id);
             const ans = state.answers[q.id];
-            const gradable = (q.type === 'mcq' || q.type === 'numeric' || q.type === 'short') && q.correctAnswer;
-            const correct = gradable && normalize(ans) === normalize(q.correctAnswer);
+            const hasCorrectAnswer = q.type === 'msq' ? Array.isArray(q.correctAnswer) && q.correctAnswer.length > 0 : !!q.correctAnswer;
+            const gradable = (q.type === 'mcq' || q.type === 'msq' || q.type === 'numeric' || q.type === 'short') && hasCorrectAnswer;
+            const answered = hasRealAnswer(q, ans);
+            const correct = gradable && answered && answerIsCorrect(q, ans);
+            const ansDisplay = Array.isArray(ans) ? ans.join(', ') : ans;
+            const correctDisplay = Array.isArray(q.correctAnswer) ? q.correctAnswer.join(', ') : q.correctAnswer;
             return (
               <div key={q.id} className="mt-card p-4">
                 <div className="flex items-start justify-between gap-2 mb-1">
@@ -1769,11 +1907,11 @@ function ResultsScreen({ state, onRestart }) {
                   <span className="text-xs mt-mono flex-shrink-0" style={{ color: 'var(--ink-faint)' }}>{fmtClock(state.timeSpent[q.id] || 0)}</span>
                 </div>
                 <div className="text-xs mb-1" style={{ color: 'var(--ink-soft)' }}>
-                  Your answer: <span style={{ color: ans ? (gradable ? (correct ? 'var(--answered)' : 'var(--alert)') : 'var(--ink)') : 'var(--ink-faint)' }}>{ans || 'Not answered'}</span>
+                  Your answer: <span style={{ color: answered ? (gradable ? (correct ? 'var(--answered)' : 'var(--alert)') : 'var(--ink)') : 'var(--ink-faint)' }}>{ansDisplay || 'Not answered'}</span>
                 </div>
                 {q.correctAnswer && (
                   <div className="text-xs" style={{ color: 'var(--ink-soft)' }}>
-                    {q.type === 'descriptive' ? 'Reference answer' : 'Correct answer'}: <span style={{ color: 'var(--answered)' }}>{q.correctAnswer}</span>
+                    {q.type === 'descriptive' ? 'Reference answer' : 'Correct answer'}: <span style={{ color: 'var(--answered)' }}>{correctDisplay}</span>
                   </div>
                 )}
               </div>
