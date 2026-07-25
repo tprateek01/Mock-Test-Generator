@@ -3,7 +3,7 @@ import {
   Upload, FileText, ClipboardPaste, Clock, Flag,
   ChevronLeft, ChevronRight, AlertTriangle, X, Plus, Trash2, Pencil,
   Play, RotateCcw, Loader2, ListChecks, Timer,
-  BarChart3, Layers, ArrowRight, Check, Calculator, Delete, Users
+  BarChart3, Layers, ArrowRight, Check, Calculator, Delete
 } from 'lucide-react';
 
 // mammoth (.docx parsing) and recharts (results chart) are both fairly heavy
@@ -258,12 +258,6 @@ function GlobalStyles() {
         min-height: 0;
         overflow-y: auto;
       }
-      .mt-site-footer {
-        flex-shrink: 0;
-        padding: 0.6rem 1.25rem;
-        background: var(--paper);
-        border-top: 1px solid var(--rule);
-      }
 
       /* Virtual calculator — header launcher + dropdown popover, available
          during the test only when the candidate opted in beforehand. Sits
@@ -458,16 +452,6 @@ async function callGemini(contents, systemInstruction, maxTokens = 1000) {
   const candidate = (data.candidates || [])[0];
   const parts = (candidate && candidate.content && candidate.content.parts) || [];
   return parts.map(p => p.text || '').join('\n');
-}
-
-// Calls the backend's /api/visitors endpoint, which bumps a persisted
-// counter by 1 and returns the new total. Used by <SiteFooter> so the
-// number goes up every time the site is loaded or reloaded.
-async function bumpVisitorCount() {
-  const resp = await fetch(`${API_BASE}/api/visitors`);
-  if (!resp.ok) throw new Error(`API error ${resp.status}`);
-  const data = await resp.json();
-  return data.count;
 }
 
 function parseJsonLoose(text) {
@@ -1968,32 +1952,6 @@ function SiteHeader() {
   );
 }
 
-function SiteFooter() {
-  // null = still loading, 'error' = counter unavailable, number = loaded count.
-  const [count, setCount] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    bumpVisitorCount()
-      .then((n) => { if (!cancelled) setCount(n); })
-      .catch(() => { if (!cancelled) setCount('error'); });
-    return () => { cancelled = true; };
-  }, []);
-
-  return (
-    <footer className="mt-site-footer">
-      <div className="flex items-center gap-1.5 justify-center text-xs" style={{ color: 'var(--ink-faint)' }}>
-        <Users size={13} />
-        {count === null && <span>Loading visitor count…</span>}
-        {count === 'error' && <span>Visitor count unavailable</span>}
-        {typeof count === 'number' && (
-          <span>{count.toLocaleString()} visitor{count === 1 ? '' : 's'}</span>
-        )}
-      </div>
-    </footer>
-  );
-}
-
 /* ============================================================
    ROOT APP — exported as MockTestApp
    ============================================================ */
@@ -2026,7 +1984,6 @@ export default function MockTestApp() {
           <ResultsScreen state={finalState} onRestart={reset} />
         )}
       </div>
-      {stage === 'upload' && <SiteFooter />}
     </div>
   );
 }

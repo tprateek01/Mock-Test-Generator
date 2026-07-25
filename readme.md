@@ -15,7 +15,7 @@ Mock-Test-Generator-main/
 ```
 
 - **Frontend** (`mock-test-generator/`) — the whole app UI: upload screen, review/edit screen, configure screen, the timed test itself, and the results screen with a score breakdown.
-- **Backend** (`server/`) — a small Express server that keeps your Gemini API key secret and forwards question-extraction requests from the frontend to Google's Gemini API. It also serves a simple visitor counter (see below).
+- **Backend** (`server/`) — a small Express server that keeps your Gemini API key secret and forwards question-extraction requests from the frontend to Google's Gemini API.
 
 ## Features
 
@@ -24,7 +24,6 @@ Mock-Test-Generator-main/
 - Configure total time, per-section or per-question timing, and negative marking
 - Take the test with a question palette, flagging, and an optional in-test calculator
 - Auto-scored results with a breakdown chart
-- Visitor counter shown in the footer of the home page
 
 ## Getting started
 
@@ -67,10 +66,6 @@ The frontend and backend are meant to be deployed separately (e.g. frontend on V
 ```
 REACT_APP_API_BASE=https://your-backend-url.example.com
 ```
-
-## Visitor counter
-
-The home page footer shows a running visitor count. Each time the site is loaded (or reloaded), the frontend calls `GET /api/visitors` on the backend, which increments a counter persisted in `server/visitors.json` and returns the new total. It's a plain file-based counter — fine for a small project, but swap it for a real database if you expect meaningful traffic.
 
 ## Tech stack
 
