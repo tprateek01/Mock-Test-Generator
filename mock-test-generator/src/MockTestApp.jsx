@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, AlertTriangle, X, Plus, Trash2, Pencil,
   Play, RotateCcw, Loader2, ListChecks, Timer,
   BarChart3, Layers, ArrowRight, Check, Calculator, Delete,
-  Download, Share, SquarePlus, FileDown, Languages
+  Download, Share, SquarePlus, FileDown, Languages, Link2, Unlink
 } from 'lucide-react';
 
 /* ------------------------------------------------------------
@@ -201,6 +201,13 @@ function GlobalStyles() {
         border: 1.5px solid #fff;
       }
       .mt-bubble.locked { opacity: 0.35; cursor: not-allowed; }
+      .mt-bubble.or-group::before {
+        content: '';
+        position: absolute; top: 2px; left: 2px;
+        width: 7px; height: 7px; border-radius: 999px;
+        background: var(--brass);
+        border: 1.5px solid #fff;
+      }
 
       .mt-flip {
         font-family: 'IBM Plex Mono', monospace;
@@ -630,13 +637,18 @@ function parseJsonLoose(text) {
 const EXTRACTION_SYSTEM = `You extract exam questions from a source document into strict JSON. Output ONLY minified JSON — no markdown fences, no commentary, no preamble.
 
 Schema:
-{"title":"string","totalQuestionsInSource":number|null,"sections":[{"name":"string","questions":[{"type":"mcq|msq|numeric|short|descriptive","text":"string","options":["string"]|null,"marks":number,"correctAnswer":"string"|["string"]|null}]}],"complete":boolean}
+{"title":"string","totalQuestionsInSource":number|null,"sections":[{"name":"string","questions":[{"type":"mcq|msq|numeric|short|descriptive","text":"string","options":["string"]|null,"marks":number,"correctAnswer":"string"|["string"]|null,"orGroup":"string"|null,"orGroupChoose":number|null}]}],"complete":boolean}
 
 Rules:
 - "mcq" = multiple choice, exactly ONE correct option. "msq" = multiple SELECT, TWO OR MORE correct options (common in GATE-style papers, often marked "one or more options may be correct"). "numeric" = requires a numeric answer, no options. "short" = brief word/phrase/one-line answer. "descriptive" = long-form written answer.
 - options: array of option text WITHOUT letter/number labels (e.g. "Paris", not "A) Paris"). Only for mcq/msq, else null.
 - marks: marks stated in the source if present, else default to 1.
 - correctAnswer: fill in ONLY if an answer key is clearly present in the source. For mcq, give the exact option text as a single string. For msq, give an ARRAY of the exact option text(s) marked correct (even if only one is marked in the source, still use an array for msq). Never invent an answer — use null if unsure.
+- orGroup / orGroupChoose — EITHER/OR QUESTIONS: real exam papers frequently say a candidate may attempt only SOME of a set of alternative questions, e.g. "Answer Q5(a) OR Q5(b)", "Attempt either Question 12 or Question 13", "Answer any THREE of the following FIVE questions", "Attempt any 4 questions from Q16 to Q20". Whenever the source explicitly states such a choice between two or more questions:
+  - Give every question in that alternative set the SAME "orGroup" string id (invent a short stable id from the source's own numbering, e.g. "Q5", "Q16-20" — reuse the exact same id string for every member of that set, including across continuation responses).
+  - Set "orGroupChoose" on every member of that set to the number of questions the candidate must actually answer from it (e.g. 1 for "either/or", 3 for "any three of the following five").
+  - Questions NOT part of such a set: orGroup: null, orGroupChoose: null.
+  - Do not invent OR groups — only mark them when the source's wording clearly states the choice (words like "either...or", "OR", "any N of the following", "attempt any N questions").
 - Group questions under their section headings exactly as they appear (e.g. "Section A", "Physics", "Part I"). If there are no explicit sections, use one section named "Section 1".
 - Preserve original question order.
 - totalQuestionsInSource: on your FIRST response only, scan the whole source (page numbers, question numbering, "Q1..Q100" style headers, table of contents, etc.) and give your best-effort count of the TOTAL number of questions the source actually contains, even though you will only extract a partial batch in this response. This is a sanity check used to make sure nothing gets missed later — take it seriously and base it on real evidence in the document (highest question number visible, explicit counts stated, etc.), not a guess. On later continuation responses, repeat the same number (or refine it if you now have better evidence), or null if truly unknowable.
@@ -710,13 +722,17 @@ async function extractQuestions(sourceParts, onProgress) {
           // Defensive: model shouldn't send an array for non-msq types, but if it does, take the first value.
           correctAnswer = correctAnswer[0] || null;
         }
+        const orGroup = typeof q.orGroup === 'string' && q.orGroup.trim() ? q.orGroup.trim() : null;
+        const orGroupChoose = orGroup && typeof q.orGroupChoose === 'number' && q.orGroupChoose > 0 ? Math.floor(q.orGroupChoose) : (orGroup ? 1 : null);
         existing.questions.push({
           id: uid('q'),
           type,
           text: q.text || '',
           options: (type === 'mcq' || type === 'msq') && Array.isArray(q.options) ? q.options : null,
           marks: typeof q.marks === 'number' && q.marks > 0 ? q.marks : 1,
-          correctAnswer
+          correctAnswer,
+          orGroup,
+          orGroupChoose
         });
       });
     });
@@ -923,6 +939,47 @@ function UploadScreen({ onExtracted }) {
 function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
   const totalQ = paper.sections.reduce((n, s) => n + s.questions.length, 0);
 
+  // OR-group ("either/or", "any N of M") linking mode — active for at most
+  // one section at a time so selection state can't bleed across sections.
+  const [groupingSIdx, setGroupingSIdx] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [chooseCount, setChooseCount] = useState(1);
+
+  const toggleGroupingMode = (sIdx) => {
+    if (groupingSIdx === sIdx) { setGroupingSIdx(null); setSelectedIds(new Set()); }
+    else { setGroupingSIdx(sIdx); setSelectedIds(new Set()); setChooseCount(1); }
+  };
+  const toggleSelected = (qid) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(qid)) next.delete(qid); else next.add(qid);
+      return next;
+    });
+  };
+  const confirmGroup = (sIdx) => {
+    if (selectedIds.size < 2) return;
+    const groupId = uid('or');
+    const count = Math.max(1, Math.min(chooseCount, selectedIds.size - 1));
+    const sections = paper.sections.slice();
+    const questions = sections[sIdx].questions.map(q => selectedIds.has(q.id) ? { ...q, orGroup: groupId, orGroupChoose: count } : q);
+    sections[sIdx] = { ...sections[sIdx], questions };
+    setPaper({ ...paper, sections });
+    setGroupingSIdx(null);
+    setSelectedIds(new Set());
+  };
+  const ungroupQuestions = (sIdx, groupId) => {
+    const sections = paper.sections.slice();
+    const questions = sections[sIdx].questions.map(q => q.orGroup === groupId ? { ...q, orGroup: null, orGroupChoose: null } : q);
+    sections[sIdx] = { ...sections[sIdx], questions };
+    setPaper({ ...paper, sections });
+  };
+  const setGroupChoose = (sIdx, groupId, count) => {
+    const sections = paper.sections.slice();
+    const questions = sections[sIdx].questions.map(q => q.orGroup === groupId ? { ...q, orGroupChoose: count } : q);
+    sections[sIdx] = { ...sections[sIdx], questions };
+    setPaper({ ...paper, sections });
+  };
+
   const updateTitle = (title) => setPaper({ ...paper, title });
 
   const updateSection = (sIdx, patch) => {
@@ -955,7 +1012,7 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
   };
   const addQuestion = (sIdx) => {
     const sections = paper.sections.slice();
-    const q = { id: uid('q'), type: 'mcq', text: '', options: ['', '', '', ''], marks: 1, correctAnswer: null };
+    const q = { id: uid('q'), type: 'mcq', text: '', options: ['', '', '', ''], marks: 1, correctAnswer: null, orGroup: null, orGroupChoose: null };
     sections[sIdx] = { ...sections[sIdx], questions: [...sections[sIdx].questions, q] };
     setPaper({ ...paper, sections });
   };
@@ -970,30 +1027,87 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
         </div>
 
         <div className="space-y-6">
-          {paper.sections.map((sec, sIdx) => (
-            <div key={sec.id} className="mt-card p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <input className="mt-input mt-serif font-semibold flex-1" value={sec.name} onChange={(e) => updateSection(sIdx, { name: e.target.value })} />
-                <button className="mt-btn mt-btn-danger" onClick={() => removeSection(sIdx)} title="Remove section"><Trash2 size={14} /></button>
-              </div>
+          {paper.sections.map((sec, sIdx) => {
+            const isGrouping = groupingSIdx === sIdx;
+            const groups = {};
+            sec.questions.forEach((q, i) => { if (q.orGroup) (groups[q.orGroup] = groups[q.orGroup] || []).push(i); });
+            const groupIds = Object.keys(groups);
 
-              <div className="space-y-4">
-                {sec.questions.map((q, qIdx) => (
-                  <QuestionEditRow
-                    key={q.id}
-                    q={q}
-                    index={qIdx}
-                    onChange={(patch) => updateQuestion(sIdx, qIdx, patch)}
-                    onRemove={() => removeQuestion(sIdx, qIdx)}
-                  />
-                ))}
-              </div>
+            return (
+              <div key={sec.id} className="mt-card p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <input className="mt-input mt-serif font-semibold flex-1" value={sec.name} onChange={(e) => updateSection(sIdx, { name: e.target.value })} />
+                  <button
+                    className="mt-btn mt-btn-ghost"
+                    onClick={() => toggleGroupingMode(sIdx)}
+                    title="Mark 'either/or' or 'answer any N of these' alternative questions"
+                  >
+                    <Link2 size={14} /> {isGrouping ? 'Cancel' : 'Link OR questions'}
+                  </button>
+                  <button className="mt-btn mt-btn-danger" onClick={() => removeSection(sIdx)} title="Remove section"><Trash2 size={14} /></button>
+                </div>
 
-              <button className="mt-btn mt-btn-ghost mt-3" onClick={() => addQuestion(sIdx)}>
-                <Plus size={14} /> Add question
-              </button>
-            </div>
-          ))}
+                {isGrouping && (
+                  <div className="mb-4 p-3 rounded flex flex-wrap items-center gap-2 text-xs" style={{ background: 'var(--brass-soft)', color: 'var(--ink)' }}>
+                    <Link2 size={13} style={{ color: 'var(--brass)', flexShrink: 0 }} />
+                    <span>Tick the alternative questions below ({selectedIds.size} selected), then say how many the candidate must answer.</span>
+                    <label className="flex items-center gap-1 flex-shrink-0">
+                      Answer
+                      <input
+                        type="number" min={1} max={Math.max(1, selectedIds.size - 1)} className="mt-input w-14"
+                        value={chooseCount} onChange={(e) => setChooseCount(parseInt(e.target.value) || 1)}
+                      />
+                      of {selectedIds.size || '…'}
+                    </label>
+                    <button className="mt-btn mt-btn-brass" disabled={selectedIds.size < 2} onClick={() => confirmGroup(sIdx)}>Group as OR</button>
+                  </div>
+                )}
+
+                {groupIds.length > 0 && (
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    {groupIds.map(gid => {
+                      const idxs = groups[gid];
+                      const chosen = sec.questions[idxs[0]].orGroupChoose || 1;
+                      return (
+                        <div key={gid} className="flex items-center gap-1.5 text-xs pl-2.5 pr-1.5 py-1 rounded-full" style={{ border: '1px solid var(--brass)', color: 'var(--ink)' }}>
+                          <Link2 size={11} style={{ color: 'var(--brass)' }} />
+                          <span>Choose</span>
+                          <input
+                            type="number" min={1} max={idxs.length} className="mt-input w-11" style={{ padding: '0.1rem 0.3rem' }}
+                            value={chosen}
+                            onChange={(e) => setGroupChoose(sIdx, gid, Math.max(1, Math.min(idxs.length, parseInt(e.target.value) || 1)))}
+                          />
+                          <span>of {idxs.length} — Q{idxs.map(i => i + 1).join(', Q')}</span>
+                          <button className="mt-btn mt-btn-ghost" style={{ padding: '0.15rem 0.35rem' }} onClick={() => ungroupQuestions(sIdx, gid)} title="Remove this OR group">
+                            <Unlink size={11} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {sec.questions.map((q, qIdx) => (
+                    <QuestionEditRow
+                      key={q.id}
+                      q={q}
+                      index={qIdx}
+                      onChange={(patch) => updateQuestion(sIdx, qIdx, patch)}
+                      onRemove={() => removeQuestion(sIdx, qIdx)}
+                      selectable={isGrouping}
+                      selected={selectedIds.has(q.id)}
+                      onToggleSelect={() => toggleSelected(q.id)}
+                    />
+                  ))}
+                </div>
+
+                <button className="mt-btn mt-btn-ghost mt-3" onClick={() => addQuestion(sIdx)}>
+                  <Plus size={14} /> Add question
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         <button className="mt-btn mt-btn-ghost mt-4" onClick={addSection}>
@@ -1013,7 +1127,7 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
   );
 }
 
-function QuestionEditRow({ q, index, onChange, onRemove }) {
+function QuestionEditRow({ q, index, onChange, onRemove, selectable, selected, onToggleSelect }) {
   const updateOption = (i, val) => {
     const options = (q.options || []).slice();
     options[i] = val;
@@ -1033,9 +1147,22 @@ function QuestionEditRow({ q, index, onChange, onRemove }) {
   };
 
   return (
-    <div className="border rounded p-3" style={{ borderColor: 'var(--rule)' }}>
+    <div className="border rounded p-3" style={{ borderColor: q.orGroup ? 'var(--brass)' : 'var(--rule)' }}>
       <div className="flex items-start gap-2 mb-2">
-        <span className="mt-mono text-xs pt-2" style={{ color: 'var(--ink-faint)' }}>Q{index + 1}</span>
+        {selectable && (
+          <button
+            className="mt-radio flex-shrink-0 mt-2"
+            style={{ borderRadius: '4px', ...(selected ? { borderColor: 'var(--brass)', background: 'var(--brass-soft)' } : {}) }}
+            onClick={onToggleSelect}
+            title="Select as an alternative question"
+          >
+            {selected ? <Check size={11} style={{ color: 'var(--brass)' }} /> : null}
+          </button>
+        )}
+        <span className="mt-mono text-xs pt-2 flex items-center gap-1.5" style={{ color: 'var(--ink-faint)' }}>
+          Q{index + 1}
+          {q.orGroup && <Link2 size={11} title={`Alternative question — answer only ${q.orGroupChoose || 1} of its group`} style={{ color: 'var(--brass)' }} />}
+        </span>
         <textarea className="mt-textarea flex-1" rows={2} placeholder="Question text" value={q.text} onChange={(e) => onChange({ text: e.target.value })} />
         <button className="mt-btn mt-btn-danger" onClick={onRemove} title="Remove question"><Trash2 size={13} /></button>
       </div>
@@ -1255,6 +1382,60 @@ function buildFlatQuestions(paper) {
   return flat;
 }
 
+// Builds { [orGroupId]: { chooseCount, members: [qid, ...] } } from the flat
+// question list — this is the single source of truth for "how many of these
+// alternative questions is the candidate actually allowed to answer".
+function buildGroupInfo(flatQuestions) {
+  const info = {};
+  flatQuestions.forEach(q => {
+    if (!q.orGroup) return;
+    if (!info[q.orGroup]) info[q.orGroup] = { chooseCount: q.orGroupChoose || 1, members: [] };
+    info[q.orGroup].members.push(q.id);
+    if (q.orGroupChoose) info[q.orGroup].chooseCount = q.orGroupChoose;
+  });
+  Object.values(info).forEach(g => {
+    g.chooseCount = Math.max(1, Math.min(g.chooseCount, g.members.length));
+  });
+  return info;
+}
+
+// Un-tracks a question from its OR group's "currently answered" order —
+// used whenever an answer is cleared/emptied, so the group's remaining
+// quota opens back up.
+function removeFromGroupOrder(state, q) {
+  if (!q.orGroup || !state.answerOrder[q.orGroup]) return state;
+  const order = state.answerOrder[q.orGroup].filter(id => id !== q.id);
+  return { ...state, answerOrder: { ...state.answerOrder, [q.orGroup]: order } };
+}
+
+// Registers that `q` now has an answer within its OR group, and — if that
+// pushes the group over its allowed "choose N" quota — silently clears the
+// oldest-answered sibling so the candidate never ends up with more answered
+// alternatives than the paper allows. This is the "smooth" enforcement: no
+// blocking dialog, the candidate just sees the earlier alternative's answer
+// disappear (and the on-screen group note explains why).
+function enforceGroupLimit(state, q) {
+  const group = state.groupInfo[q.orGroup];
+  if (!group) return state;
+  const order = (state.answerOrder[q.orGroup] || []).filter(id => id !== q.id);
+  order.push(q.id);
+
+  let answers = state.answers;
+  let status = state.status;
+  while (order.length > group.chooseCount) {
+    const evictId = order.shift();
+    if (answers[evictId] !== undefined) {
+      if (answers === state.answers) answers = { ...state.answers };
+      delete answers[evictId];
+      const curSt = status[evictId];
+      const nextSt = curSt === 'answered-marked' ? 'marked' : 'not-answered';
+      if (status === state.status) status = { ...state.status };
+      status[evictId] = nextSt;
+    }
+  }
+  return { ...state, answers, status, answerOrder: { ...state.answerOrder, [q.orGroup]: order } };
+}
+
 function initTestState(paper, config) {
   const flatQuestions = buildFlatQuestions(paper);
   const sectionRemaining = {};
@@ -1264,6 +1445,8 @@ function initTestState(paper, config) {
   return {
     paper, config, flatQuestions,
     answers: {}, status, timeSpent: {},
+    groupInfo: buildGroupInfo(flatQuestions),
+    answerOrder: {},
     currentIndex: 0,
     overallRemaining: config.totalMinutes * 60,
     sectionRemaining,
@@ -1293,13 +1476,22 @@ function visit(status, qid) {
 function testReducer(state, action) {
   switch (action.type) {
     case 'SELECT_ANSWER': {
-      const qid = state.flatQuestions[state.currentIndex].id;
+      const q = state.flatQuestions[state.currentIndex];
+      const qid = q.id;
       const cur = state.status[qid];
-      const nextStatus = cur === 'marked' || cur === 'answered-marked' ? 'answered-marked' : 'answered';
-      return { ...state, answers: { ...state.answers, [qid]: action.value }, status: { ...state.status, [qid]: nextStatus } };
+      const isEmpty = action.value === '' || action.value === null || action.value === undefined;
+      const nextStatus = isEmpty
+        ? (cur === 'answered-marked' ? 'marked' : 'not-answered')
+        : (cur === 'marked' || cur === 'answered-marked' ? 'answered-marked' : 'answered');
+      const answers = { ...state.answers };
+      if (isEmpty) delete answers[qid]; else answers[qid] = action.value;
+      let next = { ...state, answers, status: { ...state.status, [qid]: nextStatus } };
+      if (q.orGroup) next = isEmpty ? removeFromGroupOrder(next, q) : enforceGroupLimit(next, q);
+      return next;
     }
     case 'TOGGLE_MSQ_OPTION': {
-      const qid = state.flatQuestions[state.currentIndex].id;
+      const q = state.flatQuestions[state.currentIndex];
+      const qid = q.id;
       const cur = state.status[qid];
       const existing = Array.isArray(state.answers[qid]) ? state.answers[qid] : [];
       const next = existing.includes(action.value) ? existing.filter(o => o !== action.value) : [...existing, action.value];
@@ -1308,15 +1500,20 @@ function testReducer(state, action) {
       const nextStatus = next.length
         ? (cur === 'marked' || cur === 'answered-marked' ? 'answered-marked' : 'answered')
         : (cur === 'answered-marked' ? 'marked' : 'not-answered');
-      return { ...state, answers, status: { ...state.status, [qid]: nextStatus } };
+      let nextState = { ...state, answers, status: { ...state.status, [qid]: nextStatus } };
+      if (q.orGroup) nextState = next.length ? enforceGroupLimit(nextState, q) : removeFromGroupOrder(nextState, q);
+      return nextState;
     }
     case 'CLEAR': {
-      const qid = state.flatQuestions[state.currentIndex].id;
+      const q = state.flatQuestions[state.currentIndex];
+      const qid = q.id;
       const cur = state.status[qid];
       const answers = { ...state.answers };
       delete answers[qid];
       const nextStatus = cur === 'answered-marked' ? 'marked' : 'not-answered';
-      return { ...state, answers, status: { ...state.status, [qid]: nextStatus } };
+      let next = { ...state, answers, status: { ...state.status, [qid]: nextStatus } };
+      if (q.orGroup) next = removeFromGroupOrder(next, q);
+      return next;
     }
     case 'TOGGLE_MARK': {
       const qid = state.flatQuestions[state.currentIndex].id;
@@ -1779,6 +1976,50 @@ function TestScreen({ paper, config, onFinish }) {
               </div>
             )}
 
+            {q.orGroup && !isLocked && (() => {
+              const group = state.groupInfo[q.orGroup];
+              const order = state.answerOrder[q.orGroup] || [];
+              const members = group.members
+                .map(mid => ({ q: state.flatQuestions.find(fq => fq.id === mid), idx: state.flatQuestions.findIndex(fq => fq.id === mid) }))
+                .filter(m => m.q);
+              return (
+                <div className="mb-4 p-3 rounded text-xs flex items-start gap-2" style={{ background: 'var(--brass-soft)', color: 'var(--ink)' }}>
+                  <Link2 size={14} className="mt-0.5 flex-shrink-0" style={{ color: 'var(--brass)' }} />
+                  <div className="flex-1">
+                    <div className="font-semibold mb-1.5">
+                      This is an OR question — answer only {group.chooseCount} of these {members.length} ({order.length}/{group.chooseCount} answered)
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                      {members.map(({ q: mq, idx }) => {
+                        const isCurrent = mq.id === q.id;
+                        const isCounted = order.includes(mq.id);
+                        return (
+                          <button
+                            key={mq.id}
+                            className="mt-btn"
+                            style={{
+                              padding: '0.25rem 0.55rem', fontSize: '0.72rem',
+                              background: isCurrent ? 'var(--ink)' : (isCounted ? 'var(--answered)' : '#fff'),
+                              color: isCurrent || isCounted ? '#fff' : 'var(--ink-soft)',
+                              border: '1px solid ' + (isCurrent ? 'var(--ink)' : (isCounted ? 'var(--answered)' : 'var(--rule)'))
+                            }}
+                            onClick={() => !isCurrent && dispatch({ type: 'GOTO', index: idx })}
+                          >
+                            Q{idx + 1}{isCounted ? ' ✓' : ''}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{ color: 'var(--ink-soft)' }}>
+                      {order.length >= group.chooseCount && !order.includes(q.id)
+                        ? 'Answering this will replace your oldest answer among these alternatives.'
+                        : 'Only your answers to the required number above will be scored — the rest are optional.'}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="flex items-start justify-between gap-3 mb-4">
               <div className="mt-serif text-lg leading-relaxed">
                 <span className="mt-mono text-sm mr-2" style={{ color: 'var(--ink-faint)' }}>Q{state.currentIndex + 1}.</span>
@@ -1792,6 +2033,7 @@ function TestScreen({ paper, config, onFinish }) {
                 return nm > 0 ? ` · −${nm} if wrong` : '';
               })()}
               {q.type === 'msq' ? ' · one or more options may be correct' : ''}
+              {q.orGroup ? ' · OR question' : ''}
             </div>
 
             {q.type === 'mcq' && (
@@ -1922,6 +2164,10 @@ function PaletteContent({ state, dispatch, counts, sections, onGoto }) {
         <LegendDot color="var(--review)" label={`Marked (${counts.marked})`} />
         <LegendDot color="var(--ink-faint)" label={`Not visited (${counts.notVisited})`} />
       </div>
+      <div className="flex items-center gap-1.5 text-xs mb-4" style={{ color: 'var(--ink-soft)' }}>
+        <span style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--brass)', display: 'inline-block' }} />
+        <span>OR question — only some of a group need answering</span>
+      </div>
       {sections.map(sec => {
         const qs = state.flatQuestions.map((fq, idx) => ({ fq, idx })).filter(x => x.fq.sectionId === sec.id);
         if (!qs.length) return null;
@@ -1935,9 +2181,10 @@ function PaletteContent({ state, dispatch, counts, sections, onGoto }) {
               {qs.map(({ fq, idx }) => (
                 <button
                   key={fq.id}
-                  className={`mt-bubble ${statusClass(fq)} ${idx === state.currentIndex ? 'current' : ''}`}
+                  className={`mt-bubble ${statusClass(fq)} ${idx === state.currentIndex ? 'current' : ''} ${fq.orGroup ? 'or-group' : ''}`}
                   onClick={() => { dispatch({ type: 'GOTO', index: idx }); onGoto && onGoto(); }}
                   disabled={state.lockedSections[fq.sectionId]}
+                  title={fq.orGroup ? `OR question — choose ${state.groupInfo[fq.orGroup]?.chooseCount || 1} of its group` : undefined}
                 >
                   {idx + 1}
                 </button>
@@ -1991,22 +2238,60 @@ function fmtScore(n) {
   return rounded.toString();
 }
 
+// True for a question type/correctAnswer combo that the "gradable" (auto-scored)
+// branch below would score — mirrors the mcq/msq/numeric check used everywhere else.
+function isAutoGradable(q) {
+  const hasCorrectAnswer = q.type === 'msq' ? Array.isArray(q.correctAnswer) && q.correctAnswer.length > 0 : !!q.correctAnswer;
+  return (q.type === 'mcq' || q.type === 'msq' || q.type === 'numeric') && hasCorrectAnswer;
+}
+
 function gradeTest(state) {
   let maxObjective = 0, obtained = 0, correctCount = 0, wrongCount = 0, unansweredObjective = 0;
   const needsReview = [];
   const perQuestion = [];
+  const groupInfo = state.groupInfo || {};
+  const answerOrder = state.answerOrder || {};
+  const groupAccountedFor = {};
 
   state.flatQuestions.forEach((q, idx) => {
-    const ans = state.answers[q.id];
-    const hasAnswer = hasRealAnswer(q, ans);
-    const hasCorrectAnswer = q.type === 'msq' ? Array.isArray(q.correctAnswer) && q.correctAnswer.length > 0 : !!q.correctAnswer;
-    const gradable = (q.type === 'mcq' || q.type === 'msq' || q.type === 'numeric') && hasCorrectAnswer;
     let verdict = 'ungraded';
 
+    if (q.orGroup && groupInfo[q.orGroup]) {
+      const group = groupInfo[q.orGroup];
+      const order = answerOrder[q.orGroup] || [];
+      const wasAnswered = order.includes(q.id);
+
+      // Account for the group's contribution to maxObjective / unanswered count
+      // exactly once (the first time we encounter any of its members), so a
+      // 2-question "either/or" contributes one slot's worth of marks, not two.
+      if (!groupAccountedFor[q.orGroup]) {
+        groupAccountedFor[q.orGroup] = true;
+        const members = state.flatQuestions.filter(m => m.orGroup === q.orGroup);
+        const gradableMembers = members.filter(m => isAutoGradable(m) || (m.type === 'short' && m.correctAnswer));
+        if (gradableMembers.length) {
+          const topMarks = gradableMembers.map(m => m.marks).sort((a, b) => b - a).slice(0, group.chooseCount);
+          maxObjective += topMarks.reduce((a, b) => a + b, 0);
+          const answeredGradableCount = gradableMembers.filter(m => order.includes(m.id)).length;
+          unansweredObjective += Math.max(0, group.chooseCount - answeredGradableCount);
+        }
+      }
+
+      // A member the candidate didn't choose to answer isn't required and isn't
+      // scored — it's simply excluded rather than marked wrong/unanswered.
+      if (!wasAnswered) {
+        perQuestion.push({ index: idx + 1, id: q.id, time: state.timeSpent[q.id] || 0, verdict: 'not-required' });
+        return;
+      }
+    }
+
+    const ans = state.answers[q.id];
+    const hasAnswer = hasRealAnswer(q, ans);
+    const gradable = isAutoGradable(q);
+
     if (gradable) {
-      maxObjective += q.marks;
+      if (!q.orGroup) maxObjective += q.marks;
       if (!hasAnswer) {
-        unansweredObjective++;
+        if (!q.orGroup) unansweredObjective++;
         verdict = 'unanswered';
       } else if (answerIsCorrect(q, ans)) {
         obtained += q.marks;
@@ -2018,8 +2303,8 @@ function gradeTest(state) {
         verdict = 'wrong';
       }
     } else if (q.type === 'short' && q.correctAnswer) {
-      maxObjective += q.marks;
-      if (!hasAnswer) { unansweredObjective++; verdict = 'unanswered'; }
+      if (!q.orGroup) maxObjective += q.marks;
+      if (!hasAnswer) { if (!q.orGroup) unansweredObjective++; verdict = 'unanswered'; }
       else if (answerIsCorrect(q, ans)) { obtained += q.marks; correctCount++; verdict = 'correct'; }
       else { obtained -= getNegativeMarking(state.config, q.type); wrongCount++; verdict = 'wrong'; needsReview.push(q); }
     } else {
@@ -2120,11 +2405,12 @@ async function generateResultsPdf(state, grade) {
     const correct = gradable && answered && answerIsCorrect(q, ans);
     const ansDisplay = Array.isArray(ans) ? ans.join(', ') : (ans ?? '');
     const correctDisplay = Array.isArray(q.correctAnswer) ? q.correctAnswer.join(', ') : (q.correctAnswer ?? '');
-    const verdict = !answered ? 'Not answered' : (gradable ? (correct ? 'Correct' : 'Wrong') : 'Ungraded');
+    const isSkippedAlternative = q.orGroup && !((state.answerOrder && state.answerOrder[q.orGroup]) || []).includes(q.id);
+    const verdict = isSkippedAlternative ? 'Not required (OR)' : (!answered ? 'Not answered' : (gradable ? (correct ? 'Correct' : 'Wrong') : 'Ungraded'));
     return [
       String(idx + 1),
       q.sectionName || '',
-      answered ? (ansDisplay || '—') : '—',
+      isSkippedAlternative ? '—' : (answered ? (ansDisplay || '—') : '—'),
       gradable ? (correctDisplay || '—') : '—',
       verdict,
       fmtClock(state.timeSpent[q.id] || 0),
@@ -2186,7 +2472,7 @@ function ResultsScreen({ state, onRestart }) {
   });
 
   const chartData = grade.perQuestion.map(p => ({ name: `${p.index}`, seconds: p.time, verdict: p.verdict }));
-  const verdictColor = { correct: 'var(--answered)', wrong: 'var(--alert)', unanswered: 'var(--ink-faint)', ungraded: 'var(--brass)' };
+  const verdictColor = { correct: 'var(--answered)', wrong: 'var(--alert)', unanswered: 'var(--ink-faint)', ungraded: 'var(--brass)', 'not-required': 'var(--rule)' };
 
   const timeUsed = Math.max(0, state.config.totalMinutes * 60 - state.overallRemaining);
 
@@ -2243,19 +2529,32 @@ function ResultsScreen({ state, onRestart }) {
             const correct = gradable && answered && answerIsCorrect(q, ans);
             const ansDisplay = Array.isArray(ans) ? ans.join(', ') : ans;
             const correctDisplay = Array.isArray(q.correctAnswer) ? q.correctAnswer.join(', ') : q.correctAnswer;
+            const isSkippedAlternative = q.orGroup && !((state.answerOrder && state.answerOrder[q.orGroup]) || []).includes(q.id);
             return (
-              <div key={q.id} className="mt-card p-4">
+              <div key={q.id} className="mt-card p-4" style={isSkippedAlternative ? { opacity: 0.7 } : undefined}>
                 <div className="flex items-start justify-between gap-2 mb-1">
-                  <div className="text-sm mt-serif"><span className="mt-mono text-xs mr-1.5" style={{ color: 'var(--ink-faint)' }}>Q{idx + 1}.</span>{q.text}</div>
+                  <div className="text-sm mt-serif">
+                    <span className="mt-mono text-xs mr-1.5" style={{ color: 'var(--ink-faint)' }}>Q{idx + 1}.</span>
+                    {q.orGroup && <Link2 size={12} className="inline mb-0.5 mr-1" style={{ color: 'var(--brass)' }} />}
+                    {q.text}
+                  </div>
                   <span className="text-xs mt-mono flex-shrink-0" style={{ color: 'var(--ink-faint)' }}>{fmtClock(state.timeSpent[q.id] || 0)}</span>
                 </div>
-                <div className="text-xs mb-1" style={{ color: 'var(--ink-soft)' }}>
-                  Your answer: <span style={{ color: answered ? (gradable ? (correct ? 'var(--answered)' : 'var(--alert)') : 'var(--ink)') : 'var(--ink-faint)' }}>{ansDisplay || 'Not answered'}</span>
-                </div>
-                {q.correctAnswer && (
-                  <div className="text-xs" style={{ color: 'var(--ink-soft)' }}>
-                    {q.type === 'descriptive' ? 'Reference answer' : 'Correct answer'}: <span style={{ color: 'var(--answered)' }}>{correctDisplay}</span>
+                {isSkippedAlternative ? (
+                  <div className="text-xs" style={{ color: 'var(--ink-faint)' }}>
+                    Not required — you answered an alternative from this OR group instead.
                   </div>
+                ) : (
+                  <>
+                    <div className="text-xs mb-1" style={{ color: 'var(--ink-soft)' }}>
+                      Your answer: <span style={{ color: answered ? (gradable ? (correct ? 'var(--answered)' : 'var(--alert)') : 'var(--ink)') : 'var(--ink-faint)' }}>{ansDisplay || 'Not answered'}</span>
+                    </div>
+                    {q.correctAnswer && (
+                      <div className="text-xs" style={{ color: 'var(--ink-soft)' }}>
+                        {q.type === 'descriptive' ? 'Reference answer' : 'Correct answer'}: <span style={{ color: 'var(--answered)' }}>{correctDisplay}</span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             );
