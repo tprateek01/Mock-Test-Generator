@@ -4,8 +4,54 @@ import {
   ChevronLeft, ChevronRight, AlertTriangle, X, Plus, Trash2, Pencil,
   Play, RotateCcw, Loader2, ListChecks, Timer,
   BarChart3, Layers, ArrowRight, Check, Calculator, Delete,
-  Download, Share, SquarePlus, FileDown
+  Download, Share, SquarePlus, FileDown, Languages
 } from 'lucide-react';
+
+/* ------------------------------------------------------------
+   HOME PAGE LANGUAGE STRINGS — English / Hindi toggle for the
+   Upload (home) screen only. Purely a display-text swap; no
+   logic, routing, or data handling changes with it.
+   ------------------------------------------------------------ */
+const HOME_STRINGS = {
+  en: {
+    title: 'Mock Test Hall',
+    subtitle: 'Turn any paper into a timed, proctored mock test',
+    uploadFile: 'Upload file',
+    pasteText: 'Paste text',
+    dropTitle: 'Drop a paper here, or click to browse',
+    dropSub: 'PDF, Word (.docx), image, or plain text',
+    clickToReplace: 'click to replace',
+    textareaPlaceholder: 'Paste the question paper text here…',
+    startBlank: 'Start blank instead',
+    extractQuestions: 'Extract questions',
+    readingPaper: 'Reading the paper…',
+    scanning: 'Scanning for questions and sections',
+    questionsExtracted: (n) => `${n} question${n === 1 ? '' : 's'} extracted so far`,
+    errNoFile: 'Choose a file first.',
+    errNoPaste: 'Paste some question text first.',
+    errNoQuestions: 'No questions could be found in that source. Try another file, or start blank and add questions manually.',
+    errGeneric: 'Something went wrong while reading that paper.',
+  },
+  hi: {
+    title: 'मॉक टेस्ट हॉल',
+    subtitle: 'किसी भी पेपर को टाइम्ड, प्रॉक्टर्ड मॉक टेस्ट में बदलें',
+    uploadFile: 'फ़ाइल अपलोड करें',
+    pasteText: 'टेक्स्ट पेस्ट करें',
+    dropTitle: 'यहाँ पेपर डालें, या ब्राउज़ करने के लिए क्लिक करें',
+    dropSub: 'PDF, Word (.docx), इमेज, या प्लेन टेक्स्ट',
+    clickToReplace: 'बदलने के लिए क्लिक करें',
+    textareaPlaceholder: 'यहाँ प्रश्न पत्र का टेक्स्ट पेस्ट करें…',
+    startBlank: 'इसके बजाय खाली शुरू करें',
+    extractQuestions: 'प्रश्न निकालें',
+    readingPaper: 'पेपर पढ़ा जा रहा है…',
+    scanning: 'प्रश्न और सेक्शन खोजे जा रहे हैं',
+    questionsExtracted: (n) => `अब तक ${n} प्रश्न निकाले गए`,
+    errNoFile: 'पहले एक फ़ाइल चुनें।',
+    errNoPaste: 'पहले कुछ प्रश्न टेक्स्ट पेस्ट करें।',
+    errNoQuestions: 'उस स्रोत में कोई प्रश्न नहीं मिला। कोई दूसरी फ़ाइल आज़माएँ, या खाली शुरू करके प्रश्न मैन्युअल रूप से जोड़ें।',
+    errGeneric: 'उस पेपर को पढ़ते समय कुछ गड़बड़ हो गई।',
+  },
+};
 
 // mammoth (.docx parsing) and recharts (results chart) are both fairly heavy
 // and only needed on specific paths (uploading a Word doc; reaching the
@@ -165,6 +211,28 @@ function GlobalStyles() {
 
       @keyframes mt-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
       .mt-pulse { animation: mt-pulse 1s ease-in-out infinite; }
+
+      .mt-lang-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--ink-soft);
+        background: #fff;
+        border: 1px solid var(--rule);
+        border-radius: 999px;
+        padding: 0.4rem 0.75rem;
+        cursor: pointer;
+        transition: filter 0.12s ease, transform 0.05s ease;
+        flex-shrink: 0;
+      }
+      .mt-lang-toggle:hover { background: var(--paper-dim); }
+      .mt-lang-toggle:active { transform: translateY(1px); }
+      .mt-lang-toggle span { opacity: 0.45; }
+      .mt-lang-toggle span.mt-lang-active { opacity: 1; color: var(--ink); }
+      .mt-lang-toggle .mt-lang-sep { opacity: 0.3; }
 
       .mt-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
       .mt-scrollbar::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 999px; }
@@ -692,6 +760,10 @@ function UploadScreen({ onExtracted }) {
   const [progressCount, setProgressCount] = useState(0);
   const [error, setError] = useState('');
   const inputRef = useRef(null);
+  // Home-page-only display language. Purely cosmetic — doesn't touch
+  // extraction, review, timing, or test-taking, all of which stay English.
+  const [lang, setLang] = useState('en'); // 'en' | 'hi'
+  const t = HOME_STRINGS[lang];
 
   const acceptExt = '.txt,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp';
 
@@ -710,10 +782,10 @@ function UploadScreen({ onExtracted }) {
     try {
       let sourceParts;
       if (mode === 'paste') {
-        if (!pastedText.trim()) throw new Error('Paste some question text first.');
+        if (!pastedText.trim()) throw new Error(t.errNoPaste);
         sourceParts = [{ text: pastedText }];
       } else {
-        if (!file) throw new Error('Choose a file first.');
+        if (!file) throw new Error(t.errNoFile);
         const name = file.name.toLowerCase();
         if (name.endsWith('.docx') || name.endsWith('.doc')) {
           const buf = await file.arrayBuffer();
@@ -734,11 +806,11 @@ function UploadScreen({ onExtracted }) {
       }
       const paper = await extractQuestions(sourceParts, (n) => setProgressCount(n));
       if (!paper.sections.length || !paper.sections.some(s => s.questions.length)) {
-        throw new Error('No questions could be found in that source. Try another file, or start blank and add questions manually.');
+        throw new Error(t.errNoQuestions);
       }
       onExtracted(paper);
     } catch (e) {
-      setError(e.message || 'Something went wrong while reading that paper.');
+      setError(e.message || t.errGeneric);
       setStatus('error');
     }
   };
@@ -748,9 +820,9 @@ function UploadScreen({ onExtracted }) {
       <div className="min-h-full flex items-center justify-center p-6">
         <div className="mt-card mt-fade-in p-10 max-w-md w-full text-center">
           <Loader2 className="w-8 h-8 mx-auto mb-4 animate-spin" style={{ color: 'var(--brass)' }} />
-          <div className="mt-serif text-lg font-semibold mb-1">Reading the paper…</div>
+          <div className="mt-serif text-lg font-semibold mb-1">{t.readingPaper}</div>
           <div className="text-sm" style={{ color: 'var(--ink-soft)' }}>
-            {progressCount > 0 ? `${progressCount} question${progressCount === 1 ? '' : 's'} extracted so far` : 'Scanning for questions and sections'}
+            {progressCount > 0 ? t.questionsExtracted(progressCount) : t.scanning}
           </div>
         </div>
       </div>
@@ -760,20 +832,34 @@ function UploadScreen({ onExtracted }) {
   return (
     <div className="min-h-full p-6 md:p-10 flex justify-center">
       <div className="w-full max-w-2xl mt-fade-in">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="mt-seal"><ListChecks size={18} /></div>
-          <div>
-            <div className="mt-serif text-2xl font-semibold leading-tight">Mock Test Hall</div>
-            <div className="text-sm" style={{ color: 'var(--ink-soft)' }}>Turn any paper into a timed, proctored mock test</div>
+        <div className="flex items-start justify-between gap-3 mb-8">
+          <div className="flex items-center gap-3">
+            <div className="mt-seal"><ListChecks size={18} /></div>
+            <div>
+              <div className="mt-serif text-2xl font-semibold leading-tight">{t.title}</div>
+              <div className="text-sm" style={{ color: 'var(--ink-soft)' }}>{t.subtitle}</div>
+            </div>
           </div>
+          <button
+            type="button"
+            className="mt-lang-toggle"
+            onClick={() => setLang(lang === 'en' ? 'hi' : 'en')}
+            aria-label="Switch language / भाषा बदलें"
+            title="Switch language / भाषा बदलें"
+          >
+            <Languages size={13} />
+            <span className={lang === 'en' ? 'mt-lang-active' : ''}>EN</span>
+            <span className="mt-lang-sep">/</span>
+            <span className={lang === 'hi' ? 'mt-lang-active' : ''}>हिं</span>
+          </button>
         </div>
 
         <div className="flex gap-2 mb-4">
           <button className="mt-btn" style={mode === 'file' ? { background: 'var(--ink)', color: 'var(--paper)' } : { background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--rule)' }} onClick={() => setMode('file')}>
-            <Upload size={15} /> Upload file
+            <Upload size={15} /> {t.uploadFile}
           </button>
           <button className="mt-btn" style={mode === 'paste' ? { background: 'var(--ink)', color: 'var(--paper)' } : { background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--rule)' }} onClick={() => setMode('paste')}>
-            <ClipboardPaste size={15} /> Paste text
+            <ClipboardPaste size={15} /> {t.pasteText}
           </button>
         </div>
 
@@ -791,13 +877,13 @@ function UploadScreen({ onExtracted }) {
               <div className="flex flex-col items-center gap-2">
                 <FileText size={28} style={{ color: 'var(--brass)' }} />
                 <div className="font-medium text-sm">{file.name}</div>
-                <div className="text-xs" style={{ color: 'var(--ink-faint)' }}>{(file.size / 1024).toFixed(0)} KB — click to replace</div>
+                <div className="text-xs" style={{ color: 'var(--ink-faint)' }}>{(file.size / 1024).toFixed(0)} KB — {t.clickToReplace}</div>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-2">
                 <Upload size={28} style={{ color: 'var(--ink-faint)' }} />
-                <div className="font-medium text-sm">Drop a paper here, or click to browse</div>
-                <div className="text-xs" style={{ color: 'var(--ink-faint)' }}>PDF, Word (.docx), image, or plain text</div>
+                <div className="font-medium text-sm">{t.dropTitle}</div>
+                <div className="text-xs" style={{ color: 'var(--ink-faint)' }}>{t.dropSub}</div>
               </div>
             )}
           </div>
@@ -805,7 +891,7 @@ function UploadScreen({ onExtracted }) {
           <textarea
             className="mt-textarea mt-scrollbar"
             rows={10}
-            placeholder="Paste the question paper text here…"
+            placeholder={t.textareaPlaceholder}
             value={pastedText}
             onChange={(e) => setPastedText(e.target.value)}
           />
@@ -820,10 +906,10 @@ function UploadScreen({ onExtracted }) {
 
         <div className="flex items-center justify-between mt-6">
           <button className="mt-btn mt-btn-ghost" onClick={startBlank}>
-            <Pencil size={15} /> Start blank instead
+            <Pencil size={15} /> {t.startBlank}
           </button>
           <button className="mt-btn mt-btn-brass" onClick={run} disabled={mode === 'file' ? !file : !pastedText.trim()}>
-            Extract questions <ArrowRight size={15} />
+            {t.extractQuestions} <ArrowRight size={15} />
           </button>
         </div>
       </div>
