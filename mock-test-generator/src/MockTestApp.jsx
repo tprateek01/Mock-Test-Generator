@@ -3,7 +3,8 @@ import {
   Upload, FileText, ClipboardPaste, Clock, Flag,
   ChevronLeft, ChevronRight, AlertTriangle, X, Plus, Trash2, Pencil,
   Play, RotateCcw, Loader2, ListChecks, Timer,
-  BarChart3, Layers, ArrowRight, Check, Calculator, Delete
+  BarChart3, Layers, ArrowRight, Check, Calculator, Delete,
+  Download, Share, SquarePlus, FileDown
 } from 'lucide-react';
 
 // mammoth (.docx parsing) and recharts (results chart) are both fairly heavy
@@ -257,6 +258,83 @@ function GlobalStyles() {
         flex: 1 1 auto;
         min-height: 0;
         overflow-y: auto;
+      }
+
+      /* Install-app button, shown in the header on the home screen */
+      .mt-install-btn {
+        margin-left: auto;
+        flex-shrink: 0;
+        white-space: nowrap;
+      }
+      .mt-install-btn span.mt-install-btn-label {
+        display: inline;
+      }
+      @media (max-width: 520px) {
+        .mt-install-btn { padding: 0.55rem 0.7rem; }
+        .mt-install-btn span.mt-install-btn-label { display: none; }
+      }
+
+      .mt-ios-help-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(28,37,65,0.45);
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        z-index: 60;
+        padding: 1rem;
+        animation: mt-fade-in 0.15s ease both;
+      }
+      @media (min-width: 640px) {
+        .mt-ios-help-overlay { align-items: center; }
+      }
+      .mt-ios-help-card {
+        background: var(--paper);
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        max-width: 26rem;
+        width: 100%;
+        padding: 1.25rem 1.35rem 1.5rem;
+        box-shadow: 0 12px 32px rgba(28,37,65,0.25);
+      }
+      .mt-ios-help-title {
+        font-family: 'Source Serif 4', Georgia, serif;
+        font-weight: 700;
+        font-size: 1.15rem;
+        color: var(--ink);
+        margin-bottom: 0.15rem;
+      }
+      .mt-ios-help-sub {
+        font-size: 0.82rem;
+        color: var(--ink-soft);
+        margin-bottom: 1rem;
+      }
+      .mt-ios-help-steps {
+        list-style: none;
+        margin: 0 0 1.25rem;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.7rem;
+      }
+      .mt-ios-help-steps li {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.65rem;
+        font-size: 0.88rem;
+        color: var(--ink);
+        line-height: 1.4;
+      }
+      .mt-ios-help-steps .mt-ios-help-icon {
+        flex-shrink: 0;
+        width: 1.9rem;
+        height: 1.9rem;
+        border-radius: 999px;
+        background: var(--brass-soft);
+        color: var(--brass);
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
       /* Virtual calculator — header launcher + dropdown popover, available
@@ -1458,13 +1536,53 @@ function CalculatorWidget({ hidden }) {
   );
 }
 
+// Tracks whether we're at the desktop ("lg", >=1024px) layout using a real
+// matchMedia listener, instead of leaving it purely to CSS. We need this in
+// JS because the mobile question-palette drawer (and the calculator lock
+// tied to it) must never end up in a state where the drawer's "open" flag
+// is true but the drawer itself is CSS-hidden — that stranded state is what
+// was locking the calculator permanently on wider/laptop screens. Tying the
+// drawer's lifecycle to this single source of truth means the two can never
+// disagree, regardless of window resizing, browser zoom, or a scrollbar
+// nudging the viewport a few pixels either side of the breakpoint.
+const DESKTOP_QUERY = '(min-width: 1024px)';
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(DESKTOP_QUERY).matches : false
+  );
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mql = window.matchMedia(DESKTOP_QUERY);
+    const onChange = (e) => setIsDesktop(e.matches);
+    if (mql.addEventListener) mql.addEventListener('change', onChange);
+    else mql.addListener(onChange); // older Safari
+    setIsDesktop(mql.matches);
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener('change', onChange);
+      else mql.removeListener(onChange);
+    };
+  }, []);
+  return isDesktop;
+}
+
 function TestScreen({ paper, config, onFinish }) {
   const [state, dispatch] = useReducer(testReducer, undefined, () => initTestState(paper, config));
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showPaletteMobile, setShowPaletteMobile] = useState(false);
   const [showFsPrompt, setShowFsPrompt] = useState(false);
+  const isDesktop = useIsDesktop();
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // Safety net: if the window is (or becomes) desktop-sized while the mobile
+  // palette drawer thinks it's open — e.g. the browser was resized/maximized,
+  // or the viewport briefly reported < 1024px due to a scrollbar — force the
+  // drawer closed immediately. Without this, the drawer could be flagged
+  // "open" while CSS hides it (no close button reachable), which is exactly
+  // what was leaving the calculator disabled with no way to re-enable it.
+  useEffect(() => {
+    if (isDesktop && showPaletteMobile) setShowPaletteMobile(false);
+  }, [isDesktop, showPaletteMobile]);
 
   useEffect(() => {
     const interval = setInterval(() => dispatch({ type: 'TICK' }), 1000);
@@ -1536,14 +1654,16 @@ function TestScreen({ paper, config, onFinish }) {
               </div>
             </div>
           )}
-          {state.config.calculatorEnabled && <CalculatorWidget hidden={showPaletteMobile} />}
+          {state.config.calculatorEnabled && <CalculatorWidget hidden={!isDesktop && showPaletteMobile} />}
           <div className="text-right">
             <div className="mt-label" style={{ fontSize: '0.62rem' }}>Time left</div>
             <div className={`mt-flip mt-mono text-base md:text-xl ${overallCritical ? 'mt-pulse' : ''}`} style={{ color: overallCritical ? 'var(--alert)' : 'var(--ink)' }}>
               {fmtClock(state.overallRemaining)}
             </div>
           </div>
-          <button className="mt-btn mt-btn-ghost lg:hidden" onClick={() => setShowPaletteMobile(true)}><Layers size={16} /></button>
+          {!isDesktop && (
+            <button className="mt-btn mt-btn-ghost" onClick={() => setShowPaletteMobile(true)}><Layers size={16} /></button>
+          )}
         </div>
       </div>
 
@@ -1647,9 +1767,11 @@ function TestScreen({ paper, config, onFinish }) {
         </div>
 
         {/* Palette sidebar (desktop) */}
-        <div className="hidden lg:block w-72 border-l mt-hairline overflow-y-auto mt-scrollbar p-4" style={{ background: '#fff' }}>
-          <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} />
-        </div>
+        {isDesktop && (
+          <div className="w-72 border-l mt-hairline overflow-y-auto mt-scrollbar p-4" style={{ background: '#fff' }}>
+            <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} />
+          </div>
+        )}
       </div>
 
       {/* Bottom action bar — stays fixed at the bottom of the viewport; only the
@@ -1666,8 +1788,8 @@ function TestScreen({ paper, config, onFinish }) {
         </div>
       </div>
 
-      {showPaletteMobile && (
-        <div className="fixed inset-0 z-40 flex justify-end lg:hidden" style={{ background: 'rgba(28,37,65,0.4)' }} onClick={() => setShowPaletteMobile(false)}>
+      {!isDesktop && showPaletteMobile && (
+        <div className="fixed inset-0 z-40 flex justify-end" style={{ background: 'rgba(28,37,65,0.4)' }} onClick={() => setShowPaletteMobile(false)}>
           <div className="w-72 max-w-[85vw] h-full bg-white p-4 overflow-y-auto mt-scrollbar" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-end mb-2"><button onClick={() => setShowPaletteMobile(false)}><X size={18} /></button></div>
             <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} onGoto={() => setShowPaletteMobile(false)} />
@@ -1829,9 +1951,144 @@ function gradeTest(state) {
   return { maxObjective, obtained, correctCount, wrongCount, unansweredObjective, needsReview, perQuestion };
 }
 
+// Builds and downloads a PDF analytics report for the completed test:
+// overall score, breakdown counts, time used, and a per-question table.
+// jsPDF/autotable are fairly heavy and only needed here, so they're
+// dynamically imported at click-time rather than bundled up front —
+// same pattern used for mammoth (.docx parsing) in UploadScreen.
+async function generateResultsPdf(state, grade) {
+  const [{ default: jsPDF }, autoTableModule] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
+  const autoTable = autoTableModule.default;
+
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 40;
+  const ink = [28, 37, 65];
+  const brass = [169, 130, 47];
+  const inkSoft = [76, 86, 122];
+
+  let y = 50;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.setTextColor(...ink);
+  doc.text('Mocksy — Mock Test Report', marginX, y);
+
+  y += 22;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(...inkSoft);
+  doc.text(state.paper.title || 'Untitled Mock Test', marginX, y);
+
+  const timeUsed = Math.max(0, state.config.totalMinutes * 60 - state.overallRemaining);
+  y += 16;
+  doc.setFontSize(9.5);
+  doc.text(`Completed on ${new Date().toLocaleString()} · Time used: ${fmtClock(timeUsed)}`, marginX, y);
+
+  // Summary stat boxes
+  y += 24;
+  const stats = [
+    ['Score', grade.maxObjective > 0 ? `${fmtScore(grade.obtained)}/${fmtScore(grade.maxObjective)}` : '—'],
+    ['Correct', String(grade.correctCount)],
+    ['Wrong', String(grade.wrongCount)],
+    ['Unanswered', String(grade.unansweredObjective)],
+  ];
+  const boxW = (pageWidth - marginX * 2 - 3 * 10) / 4;
+  const boxH = 46;
+  stats.forEach(([label, value], i) => {
+    const x = marginX + i * (boxW + 10);
+    doc.setDrawColor(220, 213, 194);
+    doc.setLineWidth(1);
+    doc.roundedRect(x, y, boxW, boxH, 4, 4);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...inkSoft);
+    doc.text(label.toUpperCase(), x + boxW / 2, y + 17, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(...ink);
+    doc.text(value, x + boxW / 2, y + 35, { align: 'center' });
+  });
+
+  y += boxH + 16;
+
+  if (grade.needsReview.length > 0) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.setTextColor(...brass);
+    doc.text(
+      `${grade.needsReview.length} short/descriptive answer${grade.needsReview.length === 1 ? '' : 's'} need manual review — not included in the score above.`,
+      marginX, y
+    );
+    y += 14;
+  }
+
+  // Per-question breakdown table
+  const rows = state.flatQuestions.map((q, idx) => {
+    const ans = state.answers[q.id];
+    const hasCorrectAnswer = q.type === 'msq' ? Array.isArray(q.correctAnswer) && q.correctAnswer.length > 0 : !!q.correctAnswer;
+    const gradable = (q.type === 'mcq' || q.type === 'msq' || q.type === 'numeric' || q.type === 'short') && hasCorrectAnswer;
+    const answered = hasRealAnswer(q, ans);
+    const correct = gradable && answered && answerIsCorrect(q, ans);
+    const ansDisplay = Array.isArray(ans) ? ans.join(', ') : (ans ?? '');
+    const correctDisplay = Array.isArray(q.correctAnswer) ? q.correctAnswer.join(', ') : (q.correctAnswer ?? '');
+    const verdict = !answered ? 'Not answered' : (gradable ? (correct ? 'Correct' : 'Wrong') : 'Ungraded');
+    return [
+      String(idx + 1),
+      q.sectionName || '',
+      answered ? (ansDisplay || '—') : '—',
+      gradable ? (correctDisplay || '—') : '—',
+      verdict,
+      fmtClock(state.timeSpent[q.id] || 0),
+    ];
+  });
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: marginX, right: marginX },
+    head: [['#', 'Section', 'Your answer', 'Correct answer', 'Result', 'Time']],
+    body: rows,
+    styles: { font: 'helvetica', fontSize: 8.5, textColor: ink, cellPadding: 5, overflow: 'linebreak' },
+    headStyles: { fillColor: ink, textColor: [251, 248, 241], fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [242, 237, 225] },
+    columnStyles: {
+      0: { cellWidth: 24 },
+      1: { cellWidth: 70 },
+      4: { cellWidth: 62 },
+      5: { cellWidth: 42 },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 4) {
+        const v = data.cell.raw;
+        if (v === 'Correct') data.cell.styles.textColor = [47, 111, 78];
+        else if (v === 'Wrong') data.cell.styles.textColor = [178, 58, 46];
+        else data.cell.styles.textColor = [91, 100, 136];
+      }
+    },
+  });
+
+  const safeTitle = (state.paper.title || 'mock-test').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  doc.save(`${safeTitle}-report.pdf`);
+}
+
 function ResultsScreen({ state, onRestart }) {
   const grade = useMemo(() => gradeTest(state), [state]);
   const [filter, setFilter] = useState('all');
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      await generateResultsPdf(state, grade);
+    } catch (e) {
+      console.error('Failed to generate report PDF:', e);
+      window.alert("Sorry, the report couldn't be generated. Please try again.");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const filtered = state.flatQuestions.filter((q, idx) => {
     if (filter === 'all') return true;
@@ -1921,7 +2178,11 @@ function ResultsScreen({ state, onRestart }) {
       </div>
       </div>
 
-      <div className="flex-shrink-0 border-t mt-hairline p-3 md:p-4 flex justify-center" style={{ background: 'var(--paper)' }}>
+      <div className="flex-shrink-0 border-t mt-hairline p-3 md:p-4 flex flex-wrap items-center justify-center gap-2" style={{ background: 'var(--paper)' }}>
+        <button className="mt-btn mt-btn-ghost" onClick={handleDownload} disabled={downloading}>
+          {downloading ? <Loader2 size={15} className="mt-pulse" /> : <FileDown size={15} />}
+          {downloading ? 'Preparing report…' : 'Download report'}
+        </button>
         <button className="mt-btn mt-btn-brass" onClick={onRestart}><RotateCcw size={15} /> Start another mock test</button>
       </div>
     </div>
@@ -1940,7 +2201,105 @@ function StatCard({ label, value, color }) {
 /* ============================================================
    SITE HEADER — logo + brand name, shown on every screen
    ============================================================ */
-function SiteHeader() {
+/* ------------------------------------------------------------
+   INSTALL APP — turns the site into a real, icon-on-home-screen,
+   full-screen, offline-capable app via the PWA install flow.
+   Chrome/Edge/Android fire `beforeinstallprompt`, which we capture
+   and trigger from our own button. iOS Safari doesn't support that
+   event at all, so there we show short "Add to Home Screen" steps
+   instead — that's the only way to install a PWA on iOS.
+   ------------------------------------------------------------ */
+function useInstallPrompt() {
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    const standaloneMedia = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    const iosStandalone = window.navigator.standalone === true;
+    setIsStandalone(!!(standaloneMedia || iosStandalone));
+
+    const onBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    const onInstalled = () => {
+      setDeferredPrompt(null);
+      setIsStandalone(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  return { deferredPrompt, isStandalone, clearPrompt: () => setDeferredPrompt(null) };
+}
+
+function InstallAppButton() {
+  const { deferredPrompt, isStandalone, clearPrompt } = useInstallPrompt();
+  const [showIosHelp, setShowIosHelp] = useState(false);
+
+  const ua = window.navigator.userAgent || '';
+  const isIos = /iphone|ipad|ipod/i.test(ua) && !window.MSStream;
+
+  // Already installed — nothing to offer.
+  if (isStandalone) return null;
+  // Not iOS and the browser hasn't (or won't) fire beforeinstallprompt
+  // (e.g. desktop Firefox, or it just hasn't fired yet) — hide rather
+  // than show a button that does nothing.
+  if (!isIos && !deferredPrompt) return null;
+
+  const handleClick = async () => {
+    if (isIos) {
+      setShowIosHelp(true);
+      return;
+    }
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    clearPrompt();
+  };
+
+  return (
+    <>
+      <button type="button" className="mt-btn mt-btn-brass mt-install-btn" onClick={handleClick}>
+        <Download size={16} />
+        <span className="mt-install-btn-label">Download App</span>
+      </button>
+
+      {showIosHelp && (
+        <div className="mt-ios-help-overlay" onClick={() => setShowIosHelp(false)}>
+          <div className="mt-ios-help-card" onClick={(e) => e.stopPropagation()}>
+            <div className="mt-ios-help-title">Install Mocksy on your device</div>
+            <div className="mt-ios-help-sub">Adds an app icon to your Home Screen — opens full-screen, no browser bar.</div>
+            <ol className="mt-ios-help-steps">
+              <li>
+                <span className="mt-ios-help-icon"><Share size={16} /></span>
+                <span>Tap the <strong>Share</strong> icon in Safari's toolbar.</span>
+              </li>
+              <li>
+                <span className="mt-ios-help-icon"><SquarePlus size={16} /></span>
+                <span>Scroll down and tap <strong>Add to Home Screen</strong>.</span>
+              </li>
+              <li>
+                <span className="mt-ios-help-icon"><Check size={16} /></span>
+                <span>Tap <strong>Add</strong> — Mocksy now opens like any other app.</span>
+              </li>
+            </ol>
+            <button type="button" className="mt-btn mt-btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setShowIosHelp(false)}>
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function SiteHeader({ showInstall }) {
   return (
     <header className="mt-site-header">
       <img src={`${process.env.PUBLIC_URL}/mocksy-logo.jpg`} alt="Mocksy logo" />
@@ -1948,6 +2307,7 @@ function SiteHeader() {
         <div className="mt-brand-name">Mocksy</div>
         <div className="mt-brand-tag">Mock Test Generator</div>
       </div>
+      {showInstall && <InstallAppButton />}
     </header>
   );
 }
@@ -1966,7 +2326,7 @@ export default function MockTestApp() {
   return (
     <div className="mt-root mt-app-shell">
       <GlobalStyles />
-      <SiteHeader />
+      <SiteHeader showInstall={stage === 'upload'} />
       <main className="mt-stage-area">
         {stage === 'upload' && (
           <UploadScreen onExtracted={(p) => { setPaper(p); setStage('review'); }} />
