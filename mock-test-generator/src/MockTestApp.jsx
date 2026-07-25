@@ -16,7 +16,10 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 function GlobalStyles() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600;700&family=Pacifico&display=swap');
+      /* Fonts are preloaded in public/index.html's <head> instead of via @import
+         here — an @import inside a JS-injected <style> tag can't start
+         downloading until the whole JS bundle has loaded/parsed/executed,
+         which was blocking first paint and hurting mobile Performance. */
 
       .mt-root {
         --paper: #FBF8F1;
