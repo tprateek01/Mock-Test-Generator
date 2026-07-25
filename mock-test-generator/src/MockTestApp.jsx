@@ -1,12 +1,16 @@
-import React, { useState, useEffect, useRef, useReducer, useMemo } from 'react';
-import mammoth from 'mammoth';
+import React, { useState, useEffect, useRef, useReducer, useMemo, Suspense, lazy } from 'react';
 import {
   Upload, FileText, ClipboardPaste, Clock, Flag,
   ChevronLeft, ChevronRight, AlertTriangle, X, Plus, Trash2, Pencil,
   Play, RotateCcw, Loader2, ListChecks, Timer,
   BarChart3, Layers, ArrowRight, Check, Calculator, Delete
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+
+// mammoth (.docx parsing) and recharts (results chart) are both fairly heavy
+// and only needed on specific paths (uploading a Word doc; reaching the
+// Results screen) — loading them lazily keeps them out of the initial bundle
+// every visitor downloads on first paint.
+const ResultsChart = lazy(() => import('./ResultsChart'));
 
 /* ============================================================
    GLOBAL STYLE — "Hall Ticket" design language
@@ -635,6 +639,7 @@ function UploadScreen({ onExtracted }) {
         const name = file.name.toLowerCase();
         if (name.endsWith('.docx') || name.endsWith('.doc')) {
           const buf = await file.arrayBuffer();
+          const { default: mammoth } = await import('mammoth');
           const result = await mammoth.extractRawText({ arrayBuffer: buf });
           sourceParts = [{ text: result.value }];
         } else if (name.endsWith('.pdf')) {
@@ -1870,19 +1875,11 @@ function ResultsScreen({ state, onRestart }) {
 
         <div className="mt-card p-5 mb-6">
           <div className="mt-label mb-3">Time spent per question</div>
-          <div style={{ width: '100%', height: 200 }}>
-            <ResponsiveContainer>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--rule)" />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--ink-soft)' }} />
-                <YAxis tick={{ fontSize: 11, fill: 'var(--ink-soft)' }} label={{ value: 'sec', angle: -90, position: 'insideLeft', fontSize: 11, fill: 'var(--ink-soft)' }} />
-                <Tooltip formatter={(v) => [`${v}s`, 'time spent']} labelFormatter={(l) => `Q${l}`} />
-                <Bar dataKey="seconds" radius={[2, 2, 0, 0]}>
-                  {chartData.map((d, i) => <Cell key={i} fill={verdictColor[d.verdict] || 'var(--brass)'} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <Suspense fallback={<div style={{ width: '100%', height: 200 }} className="flex items-center justify-center text-xs" >
+            <span style={{ color: 'var(--ink-faint)' }}>Loading chart…</span>
+          </div>}>
+            <ResultsChart chartData={chartData} verdictColor={verdictColor} />
+          </Suspense>
         </div>
 
         <div className="flex items-center gap-2 mb-4 flex-wrap">

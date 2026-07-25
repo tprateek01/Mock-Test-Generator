@@ -6,15 +6,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#1C2541" />
 
-    <!-- Fonts: loaded here (not via a JS-injected @import) so they start
-         downloading in parallel with the HTML/JS instead of waiting for the
-         bundle to load, parse and execute first. -->
+    <!-- Fonts: loaded asynchronously so the font CSS request doesn't block
+         first paint. preload fetches it in parallel with everything else;
+         onload swaps it in as a real stylesheet once it arrives. The
+         <noscript> fallback covers the (rare) no-JS case. display=swap in
+         the URL means text renders immediately in a fallback font and swaps
+         to the webfont when it's ready, instead of staying invisible. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
+      rel="preload"
+      as="style"
       href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600;700&family=Pacifico&display=swap"
-      rel="stylesheet"
+      onload="this.onload=null;this.rel='stylesheet'"
     />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600;700&family=Pacifico&display=swap"
+      />
+    </noscript>
 
     <!-- Primary SEO tags -->
     <title>Mocksy – Free Mock Test Generator | Turn Any Question Paper Into a Timed Test</title>
