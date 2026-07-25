@@ -30,7 +30,7 @@ function GlobalStyles() {
         --paper-dim: #F2EDE1;
         --ink: #1C2541;
         --ink-soft: #4C567A;
-        --ink-faint: #8A93AE;
+        --ink-faint: #5B6488;
         --rule: #DCD5C2;
         --brass: #A9822F;
         --brass-soft: #E8DCB8;
@@ -1967,7 +1967,7 @@ export default function MockTestApp() {
     <div className="mt-root mt-app-shell">
       <GlobalStyles />
       <SiteHeader />
-      <div className="mt-stage-area">
+      <main className="mt-stage-area">
         {stage === 'upload' && (
           <UploadScreen onExtracted={(p) => { setPaper(p); setStage('review'); }} />
         )}
@@ -1983,7 +1983,7 @@ export default function MockTestApp() {
         {stage === 'results' && finalState && (
           <ResultsScreen state={finalState} onRestart={reset} />
         )}
-      </div>
+      </main>
     </div>
   );
 }

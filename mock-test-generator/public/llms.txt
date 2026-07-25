@@ -1,0 +1,17 @@
+# Mocksy
+
+> Mocksy is a free online mock test generator. Upload any question paper — a PDF, a Word document, an image, or pasted text — and Mocksy turns it into a timed, proctored, auto-graded mock test you can take right in your browser. It's built for students preparing for competitive exams such as GATE, SSC, UPSC, and banking exams.
+
+Mocksy extracts questions from an uploaded paper using AI, lets you review and edit them, configure timing and negative marking, then presents the test with a live question palette, flagging, and an optional in-test calculator. At the end you get an auto-scored results screen with a breakdown of correct, incorrect, and unanswered questions.
+
+## Main pages
+
+- [Home / Upload a question paper](https://mock-test-live.vercel.app/): Start here — upload a PDF, Word doc, image, or pasted text to generate a mock test.
+
+## Docs
+
+- [Source code and setup instructions](https://github.com/tprateek01/Mock-Test-Generator): The GitHub repository, including instructions for running the frontend and backend locally.
+
+## Optional
+
+- [Get a free Gemini API key](https://aistudio.google.com/apikey): Required by anyone self-hosting Mocksy's backend, which uses Google's Gemini API to extract questions from uploaded papers.
