@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, AlertTriangle, X, Plus, Trash2, Pencil,
   Play, RotateCcw, Loader2, ListChecks, Timer,
   BarChart3, Layers, ArrowRight, Check, Calculator, Delete,
-  Download, Share, SquarePlus, FileDown, Languages, Link2, Unlink
+  Download, Share, SquarePlus, FileDown, Languages, Link2, Unlink, Shuffle
 } from 'lucide-react';
 
 /* ------------------------------------------------------------
@@ -31,6 +31,9 @@ const HOME_STRINGS = {
     errNoPaste: 'Paste some question text first.',
     errNoQuestions: 'No questions could be found in that source. Try another file, or start blank and add questions manually.',
     errGeneric: 'Something went wrong while reading that paper.',
+    limitToggle: "Don't fetch every question",
+    limitLabel: 'How many questions to fetch',
+    limitHint: (n) => `Only the first ${n || 0} question${n === 1 ? '' : 's'} (in the paper's own order) will be extracted.`,
   },
   hi: {
     title: 'मॉक टेस्ट हॉल',
@@ -50,6 +53,9 @@ const HOME_STRINGS = {
     errNoPaste: 'पहले कुछ प्रश्न टेक्स्ट पेस्ट करें।',
     errNoQuestions: 'उस स्रोत में कोई प्रश्न नहीं मिला। कोई दूसरी फ़ाइल आज़माएँ, या खाली शुरू करके प्रश्न मैन्युअल रूप से जोड़ें।',
     errGeneric: 'उस पेपर को पढ़ते समय कुछ गड़बड़ हो गई।',
+    limitToggle: 'सभी प्रश्न न लाएं',
+    limitLabel: 'कितने प्रश्न लाने हैं',
+    limitHint: (n) => `केवल पहले ${n || 0} प्रश्न (पेपर के अपने क्रम में) निकाले जाएंगे।`,
   },
 };
 
@@ -652,7 +658,7 @@ Schema:
 
 Rules:
 - "mcq" = multiple choice, exactly ONE correct option. "msq" = multiple SELECT, TWO OR MORE correct options (common in GATE-style papers, often marked "one or more options may be correct"). "numeric" = requires a numeric answer, no options. "short" = brief word/phrase/one-line answer. "descriptive" = long-form written answer.
-- options: array of option text WITHOUT letter/number labels (e.g. "Paris", not "A) Paris"). Only for mcq/msq, else null.
+- options: array of option text WITHOUT letter/number labels (e.g. "Paris", not "A) Paris"). Only for mcq/msq, else null. If an option IS an image/diagram/shape rather than text (e.g. "which of these 4 figures is the odd one out", geometric-pattern options, graph-shaped options), do NOT skip it or leave it blank — write a precise, detailed textual description of exactly what's drawn (shape type, number of sides/sections, orientation, shading, arrows, labels, relative position of parts, etc.) so someone who cannot see the original could still tell this option apart from the others. Prefix any such description with "[Figure] " so the app can flag it for the candidate.
 - marks: marks stated in the source if present, else default to 1.
 - correctAnswer: fill in ONLY if an answer key is clearly present in the source. For mcq, give the exact option text as a single string. For msq, give an ARRAY of the exact option text(s) marked correct (even if only one is marked in the source, still use an array for msq). Never invent an answer — use null if unsure.
 - orGroup / orGroupChoose — EITHER/OR QUESTIONS: real exam papers frequently say a candidate may attempt only SOME of a set of alternative questions, e.g. "Answer Q5(a) OR Q5(b)", "Attempt either Question 12 or Question 13", "Answer any THREE of the following FIVE questions", "Attempt any 4 questions from Q16 to Q20". Whenever the source explicitly states such a choice between two or more questions:
@@ -675,17 +681,26 @@ PASSAGE / COMPREHENSION SETS — read carefully, this is a common failure point:
 - When continuing after a stop like that, re-emit the FULL passage from the beginning (since it was never sent), never a fragment.
 
 Real-world source documents are messy. Handle all of the following without asking for clarification:
-- IGNORE entire pages or blocks that are advertisements, app-download banners, subscription/promo pages, watermarks, logos, or website chrome (e.g. "Download the app", "Get it on Google Play", pricing/subscription tables). These never contain real questions — skip them entirely and continue to the next real question.
+- IGNORE entire pages or blocks that are advertisements, app-download banners, subscription/promo pages, watermarks, logos, or website chrome (e.g. "Download the app", "Get it on Google Play", pricing/subscription tables). These never contain real questions — skip them entirely and continue to the next real question. The same applies to purely visual content: a letterhead crest, publisher logo, decorative border/divider, header/footer artwork, or cover-page illustration is NOT a question figure — never describe one of these under "[Figure]" or treat it as an answer option. Only apply the "[Figure]" rule below to an image that is actually part of a specific question's stimulus or one of its options.
 - IGNORE repeating diagonal or tiled watermark text overlaid on the page (e.g. a brand name repeated across the page). It is not question content.
 - If the source is an ANSWER KEY / already-attempted paper where the correct option is marked visually (e.g. a green checkmark/tick, a colored highlight, or bold/colored text) and an incorrect or "selected" option is marked differently (e.g. a red cross), read the VISUAL marking to identify correctAnswer as the option marked correct — do not confuse "the option the candidate chose" with "the correct option" if the source distinguishes them (e.g. a note like "chosen option" vs "correct option"); only extract the CORRECT one into correctAnswer.
 - IGNORE stray numbers or codes that appear detached from question text with no clear label (e.g. a bare number floating next to or inside a question that isn't part of the question's wording, options, or marks) — these are usually leftover layout artifacts (like a candidate's response-id marker) from the original source and must not be included in the question text or treated as an option.
-- If a question references an image, diagram, table, or figure that is essential to answering it (e.g. a Venn diagram, graph, or geometric figure) and the figure's content cannot be captured in text, still extract the question text as-is and set correctAnswer from any visible answer key; do not fabricate a description of the figure.
+- If a question, or any part of it, is built around an image, diagram, table, chart, or geometric figure (e.g. a Venn diagram, graph, circuit diagram, map, or shape pattern), do NOT skip or blank out that part. Describe what's actually drawn in enough concrete visual detail (shapes, counts, positions, labels, arrows, shading, axis values, etc.) that the question remains fully answerable from text alone. Prefix the description with "[Figure] " (e.g. "[Figure] A right triangle with legs 3 cm and 4 cm, right angle at the bottom-left vertex, hypotenuse labeled x") and weave it into the question's "text" field at the point where the figure appears. Still set correctAnswer from any visible answer key. Only fall back to a brief "[Figure: could not be read in enough detail]" note if the image is genuinely illegible (e.g. too low-resolution or cut off) — never silently drop it.
+- Some sources (Word documents in particular) arrive as extracted text PLUS a set of separately-attached embedded images. If the text contains a marker like "[[embedded-image-3]]", it means an image was originally at that exact spot — match it to the 3rd image attachment (attachments are in the same order as their markers) to see what it actually shows, then replace the marker with a "[Figure] ..." description per the rule above.
 - Multi-page PDFs: question numbering continues across pages/sections seamlessly — do not restart numbering or duplicate a question that spans a page break.`;
 
-async function extractQuestions(sourceParts, onProgress) {
+async function extractQuestions(sourceParts, onProgress, maxQuestions = null) {
+  const cap = typeof maxQuestions === 'number' && maxQuestions > 0 ? Math.floor(maxQuestions) : null;
   let contents = [{
     role: 'user',
-    parts: [...sourceParts, { text: 'Extract all questions from this exam paper into the JSON schema described in the system instructions. Begin with the first question.' }]
+    parts: [
+      ...sourceParts,
+      {
+        text: cap
+          ? `Extract only the FIRST ${cap} question(s) from this exam paper (in the source's own reading order) into the JSON schema described in the system instructions. Begin with the first question. Once you have provided all ${cap} of them, set "complete": true even though the source may contain more questions after that point — do not extract anything beyond the first ${cap}.`
+          : 'Extract all questions from this exam paper into the JSON schema described in the system instructions. Begin with the first question.'
+      }
+    ]
   }];
   const sections = [];
   let iterations = 0;
@@ -773,6 +788,11 @@ async function extractQuestions(sourceParts, onProgress) {
     const afterCount = totalSoFar();
     onProgress && onProgress(afterCount);
 
+    // A user-requested cap always wins over the model's own pacing — stop
+    // pulling more batches the moment we have enough, regardless of whether
+    // the model still thinks there's more to extract.
+    if (cap && afterCount >= cap) break;
+
     const madeProgress = afterCount > beforeCount;
     staleStreak = madeProgress ? 0 : staleStreak + 1;
     // Two responses in a row with zero new questions means the model is stuck —
@@ -787,7 +807,9 @@ async function extractQuestions(sourceParts, onProgress) {
     // The model says it's finished — but before trusting that, check it against
     // its own earlier estimate of the total. This is what catches "90 out of 100"
     // style undercounts instead of silently accepting an incomplete extraction.
-    if (expectedTotal && afterCount < expectedTotal && reconcileRounds < MAX_RECONCILE_ROUNDS) {
+    // Skipped entirely when a cap is set — an "undercount" relative to the
+    // full source is expected and intentional in that case.
+    if (!cap && expectedTotal && afterCount < expectedTotal && reconcileRounds < MAX_RECONCILE_ROUNDS) {
       reconcileRounds++;
       contents = [...contents, { role: 'model', parts: [{ text: raw }] }, { role: 'user', parts: [{ text: `You estimated earlier that this source has about ${expectedTotal} questions, but you have only extracted ${afterCount} so far. Carefully re-scan the ENTIRE source end to end, including any pages, sections, or passage-based question sets you may have skipped, and extract every remaining question you find, same JSON schema. Never repeat a question already extracted. If after a careful re-check there truly are no more questions, set "complete": true again.` }] }];
       continue;
@@ -808,10 +830,32 @@ async function extractQuestions(sourceParts, onProgress) {
       if (a.__qn !== null && b.__qn !== null && a.__qn !== b.__qn) return a.__qn - b.__qn;
       return a.__seq - b.__seq;
     });
+  });
+
+  // A batch can slightly overshoot a user-requested cap (the model doesn't
+  // stop mid-question), so trim back down to exactly `cap` here. questionNumber
+  // is continuous across the WHOLE source, not per section, so "first N
+  // questions" means first N in that global order — not first N per section —
+  // hence sorting the flattened list across all sections together.
+  let finalSections = sections;
+  if (cap) {
+    const flat = [];
+    sections.forEach(sec => sec.questions.forEach(q => flat.push({ sec, q })));
+    flat.sort((a, b) => {
+      if (a.q.__qn !== null && b.q.__qn !== null && a.q.__qn !== b.q.__qn) return a.q.__qn - b.q.__qn;
+      return a.q.__seq - b.q.__seq;
+    });
+    const keep = new Set(flat.slice(0, cap).map(f => f.q.id));
+    finalSections = sections
+      .map(sec => ({ ...sec, questions: sec.questions.filter(q => keep.has(q.id)) }))
+      .filter(sec => sec.questions.length > 0);
+  }
+
+  finalSections.forEach(sec => {
     sec.questions.forEach(q => { delete q.__qn; delete q.__seq; });
   });
 
-  return { title, sections, expectedTotal };
+  return { title, sections: finalSections, expectedTotal: cap ? null : expectedTotal };
 }
 
 /* ============================================================
@@ -830,6 +874,11 @@ function UploadScreen({ onExtracted }) {
   // extraction, review, timing, or test-taking, all of which stay English.
   const [lang, setLang] = useState('en'); // 'en' | 'hi'
   const t = HOME_STRINGS[lang];
+  // Optional cap so someone with a huge source paper (or who just wants a
+  // quick practice run) can pull only the first N questions instead of the
+  // whole thing — cuts extraction time/cost too.
+  const [limitEnabled, setLimitEnabled] = useState(false);
+  const [questionLimit, setQuestionLimit] = useState(20);
 
   const acceptExt = '.txt,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp';
 
@@ -856,8 +905,77 @@ function UploadScreen({ onExtracted }) {
         if (name.endsWith('.docx') || name.endsWith('.doc')) {
           const buf = await file.arrayBuffer();
           const { default: mammoth } = await import('mammoth');
-          const result = await mammoth.extractRawText({ arrayBuffer: buf });
-          sourceParts = [{ text: result.value }];
+          // Pull embedded pictures (diagrams, shape-based options, etc.) out
+          // as their own inlineData parts — same shape as the PDF/image
+          // branches below — so the model can actually SEE them, instead of
+          // extractRawText's plain-text-only output which silently drops
+          // every image in the document.
+          //
+          // NOT every embedded picture is question content though — Word
+          // docs commonly carry a letterhead logo, header/footer crest, a
+          // decorative divider line, or clip-art bullets. Sending those to
+          // the model wastes payload/tokens and risks it mistaking a logo
+          // for a "figure" that belongs to a question. isLikelyContentImage
+          // filters those out by size/shape before an image is ever attached.
+          const isLikelyContentImage = (bytes, width, height) => {
+            if (bytes < 3072) return false; // sub-3KB: almost always an icon/logo/bullet
+            if (width && height) {
+              if (width < 60 || height < 60) return false; // tiny — icon-sized
+              const ratio = Math.max(width / height, height / width);
+              if (ratio > 6) return false; // long thin strip — divider/rule/banner, not a figure
+            }
+            return true;
+          };
+          const readImageDimensions = (base64, mimeType) => new Promise((resolve) => {
+            try {
+              const img = new window.Image();
+              img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+              img.onerror = () => resolve({ width: 0, height: 0 });
+              img.src = `data:${mimeType};base64,${base64}`;
+            } catch {
+              resolve({ width: 0, height: 0 });
+            }
+          });
+          const images = [];
+          let imgIdx = 0;
+          const html = await mammoth.convertToHtml(
+            { arrayBuffer: buf },
+            {
+              convertImage: mammoth.images.imgElement(async (image) => {
+                const b64 = await image.read('base64');
+                const mimeType = image.contentType || 'image/png';
+                const byteSize = Math.floor(b64.length * 3 / 4);
+                const { width, height } = await readImageDimensions(b64, mimeType);
+                if (!isLikelyContentImage(byteSize, width, height)) {
+                  return { src: '' }; // decorative — drop silently, no marker left in text
+                }
+                imgIdx += 1;
+                images.push({ inlineData: { mimeType, data: b64 } });
+                // Leave a marker in the text flow so the model knows roughly
+                // where each image sits relative to the surrounding text.
+                return { src: '', alt: `[[embedded-image-${imgIdx}]]` };
+              })
+            }
+          );
+          const text = html.value
+            .replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, '\n$1\n')
+            .replace(/<img[^>]*>/gi, '\n')
+            .replace(/<\/p>|<\/li>|<\/tr>/gi, '\n')
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+          sourceParts = images.length
+            ? [
+                { text: `${text}\n\n(${images.length} embedded image(s) from this document follow, in the order they were referenced above as [[embedded-image-N]] markers.)` },
+                ...images
+              ]
+            : [{ text }];
         } else if (name.endsWith('.pdf')) {
           const b64 = await fileToBase64(file);
           sourceParts = [{ inlineData: { mimeType: 'application/pdf', data: b64 } }];
@@ -870,7 +988,8 @@ function UploadScreen({ onExtracted }) {
           sourceParts = [{ inlineData: { mimeType: mediaType, data: b64 } }];
         }
       }
-      const paper = await extractQuestions(sourceParts, (n) => setProgressCount(n));
+      const cap = limitEnabled && Number(questionLimit) > 0 ? Math.floor(Number(questionLimit)) : null;
+      const paper = await extractQuestions(sourceParts, (n) => setProgressCount(n), cap);
       if (!paper.sections.length || !paper.sections.some(s => s.questions.length)) {
         throw new Error(t.errNoQuestions);
       }
@@ -888,7 +1007,9 @@ function UploadScreen({ onExtracted }) {
           <Loader2 className="w-8 h-8 mx-auto mb-4 animate-spin" style={{ color: 'var(--brass)' }} />
           <div className="mt-serif text-lg font-semibold mb-1">{t.readingPaper}</div>
           <div className="text-sm" style={{ color: 'var(--ink-soft)' }}>
-            {progressCount > 0 ? t.questionsExtracted(progressCount) : t.scanning}
+            {progressCount > 0
+              ? (limitEnabled && questionLimit > 0 ? `${progressCount} of ${questionLimit} question${questionLimit === 1 ? '' : 's'} extracted so far` : t.questionsExtracted(progressCount))
+              : t.scanning}
           </div>
         </div>
       </div>
@@ -962,6 +1083,26 @@ function UploadScreen({ onExtracted }) {
             onChange={(e) => setPastedText(e.target.value)}
           />
         )}
+
+        <div className="mt-card p-4 mt-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={limitEnabled} onChange={(e) => setLimitEnabled(e.target.checked)} />
+            <span className="mt-label">{t.limitToggle}</span>
+          </label>
+          {limitEnabled && (
+            <div className="mt-3 pl-6">
+              <div className="flex items-center gap-3">
+                <span className="text-sm flex-shrink-0" style={{ color: 'var(--ink-soft)' }}>{t.limitLabel}</span>
+                <input
+                  type="number" min={1} className="mt-input w-24"
+                  value={questionLimit}
+                  onChange={(e) => setQuestionLimit(Math.max(1, parseInt(e.target.value) || 1))}
+                />
+              </div>
+              <div className="text-xs mt-1.5" style={{ color: 'var(--ink-faint)' }}>{t.limitHint(questionLimit)}</div>
+            </div>
+          )}
+        </div>
 
         {error && (
           <div className="mt-3 flex items-start gap-2 text-sm p-3 rounded" style={{ background: 'var(--alert-soft)', color: 'var(--alert)' }}>
@@ -1045,6 +1186,19 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
   const addSection = () => {
     setPaper({ ...paper, sections: [...paper.sections, { id: uid('sec'), name: `Section ${paper.sections.length + 1}`, questions: [] }] });
   };
+  // Randomizes question order within one section only (Fisher–Yates).
+  // orGroup/orGroupChoose live on each question itself, not on position, so
+  // "either/or" groupings stay intact — only the display/attempt order changes.
+  const shuffleSection = (sIdx) => {
+    const sections = paper.sections.slice();
+    const questions = sections[sIdx].questions.slice();
+    for (let i = questions.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [questions[i], questions[j]] = [questions[j], questions[i]];
+    }
+    sections[sIdx] = { ...sections[sIdx], questions };
+    setPaper({ ...paper, sections });
+  };
 
   const updateQuestion = (sIdx, qIdx, patch) => {
     const sections = paper.sections.slice();
@@ -1098,6 +1252,14 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
                     title="Mark 'either/or' or 'answer any N of these' alternative questions"
                   >
                     <Link2 size={14} /> {isGrouping ? 'Cancel' : 'Link OR questions'}
+                  </button>
+                  <button
+                    className="mt-btn mt-btn-ghost"
+                    onClick={() => shuffleSection(sIdx)}
+                    disabled={sec.questions.length < 2}
+                    title={paper.sections.length > 1 ? 'Randomize the order of questions in this section' : 'Randomize the order of all questions'}
+                  >
+                    <Shuffle size={14} /> {paper.sections.length > 1 ? 'Shuffle' : 'Shuffle all'}
                   </button>
                   <button className="mt-btn mt-btn-danger" onClick={() => removeSection(sIdx)} title="Remove section"><Trash2 size={14} /></button>
                 </div>
@@ -1169,7 +1331,10 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
           <Plus size={14} /> Add section
         </button>
 
-        <div className="fixed bottom-0 left-0 right-0 border-t mt-hairline p-4 flex items-center justify-between" style={{ background: 'var(--paper)' }}>
+        <div
+          className="fixed bottom-0 left-0 right-0 border-t mt-hairline p-4 flex items-center justify-between"
+          style={{ background: 'var(--paper)', zIndex: 20, paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
+        >
           <div className="max-w-3xl w-full mx-auto flex items-center justify-between">
             <button className="mt-btn mt-btn-ghost" onClick={onBack}><ChevronLeft size={15} /> Back</button>
             <button className="mt-btn mt-btn-brass" disabled={totalQ === 0} onClick={onContinue}>
@@ -1452,7 +1617,10 @@ function ConfigureScreen({ paper, onBack, onStart }) {
           </label>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 border-t mt-hairline p-4" style={{ background: 'var(--paper)' }}>
+        <div
+          className="fixed bottom-0 left-0 right-0 border-t mt-hairline p-4"
+          style={{ background: 'var(--paper)', zIndex: 20, paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
+        >
           <div className="max-w-2xl w-full mx-auto flex items-center justify-between">
             <button className="mt-btn mt-btn-ghost" onClick={onBack}><ChevronLeft size={15} /> Back</button>
             <button
