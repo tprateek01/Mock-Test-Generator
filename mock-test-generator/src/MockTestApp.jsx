@@ -135,6 +135,9 @@ function GlobalStyles() {
       .mt-btn-danger:hover:not(:disabled) { background: var(--alert-soft); }
       .mt-btn-review { background: var(--review); color: #fff; }
       .mt-btn-review:hover:not(:disabled) { filter: brightness(1.1); }
+      .mt-btn-outline-accent { background: #fff; color: var(--review); border-color: var(--review); }
+      .mt-btn-outline-accent:hover:not(:disabled) { background: var(--review-soft); }
+      .mt-btn-outline-accent:disabled { background: #fff; }
 
       .mt-input, .mt-textarea, .mt-select {
         font-family: 'IBM Plex Sans', sans-serif;
@@ -689,9 +692,68 @@ Real-world source documents are messy. Handle all of the following without askin
 - Some sources (Word documents in particular) arrive as extracted text PLUS a set of separately-attached embedded images. If the text contains a marker like "[[embedded-image-3]]", it means an image was originally at that exact spot — match it to the 3rd image attachment (attachments are in the same order as their markers) to see what it actually shows, then replace the marker with a "[Figure] ..." description per the rule above.
 - Multi-page PDFs: question numbering continues across pages/sections seamlessly — do not restart numbering or duplicate a question that spans a page break.`;
 
-async function extractQuestions(sourceParts, onProgress, maxQuestions = null) {
-  const cap = typeof maxQuestions === 'number' && maxQuestions > 0 ? Math.floor(maxQuestions) : null;
-  let contents = [{
+// Persists an in-progress extraction (including the source's own base64
+// bytes, which can be several MB for a PDF/image — too big for
+// localStorage's ~5-10MB quota) so that if the app is switched away from,
+// backgrounded, and the OS reclaims/reloads the page mid-fetch — which is
+// what was silently discontinuing extraction on mobile — the next mount can
+// resume the SAME extraction (same conversation history, same questions
+// already found) instead of forcing the user to re-upload and start over.
+const EXTRACTION_DB_NAME = 'mocksy_extraction_v1';
+const EXTRACTION_STORE = 'progress';
+const EXTRACTION_KEY = 'current';
+function openExtractionDB() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) { reject(new Error('no indexeddb')); return; }
+    const req = indexedDB.open(EXTRACTION_DB_NAME, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(EXTRACTION_STORE); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function saveExtractionProgress(data) {
+  try {
+    const db = await openExtractionDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(EXTRACTION_STORE, 'readwrite');
+      tx.objectStore(EXTRACTION_STORE).put({ ...data, savedAt: Date.now() }, EXTRACTION_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (e) { /* best-effort — never let autosave break extraction */ }
+}
+async function loadExtractionProgress() {
+  try {
+    const db = await openExtractionDB();
+    const result = await new Promise((resolve, reject) => {
+      const tx = db.transaction(EXTRACTION_STORE, 'readonly');
+      const req = tx.objectStore(EXTRACTION_STORE).get(EXTRACTION_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return result;
+  } catch (e) { return null; }
+}
+async function clearExtractionProgress() {
+  try {
+    const db = await openExtractionDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(EXTRACTION_STORE, 'readwrite');
+      tx.objectStore(EXTRACTION_STORE).delete(EXTRACTION_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (e) { /* ignore */ }
+}
+
+async function extractQuestions(sourceParts, onProgress, maxQuestions = null, resume = null, onSaveState = null) {
+  const cap = resume && resume.cap !== undefined
+    ? resume.cap
+    : (typeof maxQuestions === 'number' && maxQuestions > 0 ? Math.floor(maxQuestions) : null);
+  let contents = (resume && resume.contents) || [{
     role: 'user',
     parts: [
       ...sourceParts,
@@ -702,23 +764,23 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null) {
       }
     ]
   }];
-  const sections = [];
-  let iterations = 0;
-  let title = 'Mock Test';
-  let expectedTotal = null;
-  let reconcileRounds = 0;
+  const sections = (resume && resume.sections) ? resume.sections.map(s => ({ ...s, questions: s.questions.map(q => ({ ...q })) })) : [];
+  let iterations = (resume && resume.iterations) || 0;
+  let title = (resume && resume.title) || 'Mock Test';
+  let expectedTotal = resume && typeof resume.expectedTotal !== 'undefined' ? resume.expectedTotal : null;
+  let reconcileRounds = (resume && resume.reconcileRounds) || 0;
   let staleStreak = 0;
   // Tracks every questionNumber already accepted, so a later batch (e.g. a
   // reconciliation re-scan) can't sneak in a duplicate of a question we
   // already have — this is what keeps the final count exactly matching the
   // source instead of drifting over.
-  const seenQuestionNumbers = new Set();
+  const seenQuestionNumbers = new Set((resume && resume.seenQuestionNumbers) || []);
   // Plain object (not `let`) so the forEach callbacks below — recreated each
   // while-loop iteration — close over a stable `const` binding instead of a
   // reassigned loop variable. Functionally identical to `let globalSeq = 0;
   // globalSeq++`, but avoids ESLint's no-loop-func rule, which CRA's build
   // treats as a hard error under CI=true (as on Vercel).
-  const seqRef = { current: 0 };
+  const seqRef = { current: (resume && resume.seq) || 0 };
 
   const MAX_ITERATIONS = 60;
   const MAX_RECONCILE_ROUNDS = 6;
@@ -729,8 +791,16 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null) {
 
   const totalSoFar = () => sections.reduce((n, s) => n + s.questions.length, 0);
 
+  if (resume && onProgress) onProgress(totalSoFar());
+
   while (iterations < MAX_ITERATIONS) {
     iterations++;
+    if (onSaveState) {
+      await onSaveState({
+        contents, sections, iterations, title, expectedTotal, reconcileRounds,
+        seenQuestionNumbers: Array.from(seenQuestionNumbers), seq: seqRef.current, cap
+      });
+    }
     const raw = await callGemini(contents, EXTRACTION_SYSTEM, MAX_OUTPUT_TOKENS);
     let parsed;
     try {
@@ -880,6 +950,39 @@ function UploadScreen({ onExtracted }) {
   const [limitEnabled, setLimitEnabled] = useState(false);
   const [questionLimit, setQuestionLimit] = useState(20);
 
+  // If the app was switched away from / backgrounded mid-extraction and the
+  // OS reloaded the page (reclaiming memory, which is what silently
+  // discontinued fetching before), pick the interrupted extraction back up
+  // automatically instead of making the user re-upload and start over.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const saved = await loadExtractionProgress();
+      if (cancelled || !saved || !saved.contents) return;
+      setStatus('working');
+      setProgressCount((saved.sections || []).reduce((n, s) => n + s.questions.length, 0));
+      try {
+        const paper = await extractQuestions(
+          [], (n) => { if (!cancelled) setProgressCount(n); }, saved.cap, saved,
+          (snap) => saveExtractionProgress({ ...snap, sourceSignature: saved.sourceSignature })
+        );
+        if (cancelled) return;
+        if (!paper.sections.length || !paper.sections.some(s => s.questions.length)) {
+          throw new Error(t.errNoQuestions);
+        }
+        await clearExtractionProgress();
+        onExtracted(paper);
+      } catch (e) {
+        if (cancelled) return;
+        await clearExtractionProgress();
+        setError(e.message || t.errGeneric);
+        setStatus('error');
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const acceptExt = '.txt,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp';
 
   const handleFiles = (files) => {
@@ -894,6 +997,8 @@ function UploadScreen({ onExtracted }) {
     setError('');
     setStatus('working');
     setProgressCount(0);
+    await clearExtractionProgress(); // a fresh run always discards any stale interrupted attempt
+    const sourceSignature = mode === 'paste' ? `paste:${pastedText.length}` : `file:${file ? `${file.name}:${file.size}` : ''}`;
     try {
       let sourceParts;
       if (mode === 'paste') {
@@ -989,12 +1094,17 @@ function UploadScreen({ onExtracted }) {
         }
       }
       const cap = limitEnabled && Number(questionLimit) > 0 ? Math.floor(Number(questionLimit)) : null;
-      const paper = await extractQuestions(sourceParts, (n) => setProgressCount(n), cap);
+      const paper = await extractQuestions(
+        sourceParts, (n) => setProgressCount(n), cap, null,
+        (snap) => saveExtractionProgress({ ...snap, sourceSignature })
+      );
       if (!paper.sections.length || !paper.sections.some(s => s.questions.length)) {
         throw new Error(t.errNoQuestions);
       }
+      await clearExtractionProgress();
       onExtracted(paper);
     } catch (e) {
+      await clearExtractionProgress();
       setError(e.message || t.errGeneric);
       setStatus('error');
     }
@@ -1227,7 +1337,9 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
         <div className="mb-6">
           <div className="mt-label mb-1">Paper title</div>
           <input className="mt-input mt-serif text-lg font-semibold" value={paper.title} onChange={(e) => updateTitle(e.target.value)} />
-          <div className="text-sm mt-2" style={{ color: 'var(--ink-soft)' }}>{paper.sections.length} section{paper.sections.length === 1 ? '' : 's'} · {totalQ} question{totalQ === 1 ? '' : 's'} — check these over before you set the clock.</div>
+          <div className="text-sm mt-2" style={{ color: 'var(--ink-soft)' }}>
+            {paper.sections.length > 1 ? `${paper.sections.length} sections · ` : ''}{totalQ} question{totalQ === 1 ? '' : 's'} — check these over before you set the clock.
+          </div>
           {typeof paper.expectedTotal === 'number' && paper.expectedTotal > 0 && paper.expectedTotal !== totalQ && (
             <div className="text-xs mt-2 px-3 py-2 rounded" style={{ background: 'var(--alert-soft)', color: 'var(--alert)' }}>
               The source looked like it has about {paper.expectedTotal} question{paper.expectedTotal === 1 ? '' : 's'}, but {totalQ} {totalQ === 1 ? 'was' : 'were'} extracted. Double-check the sections below against the original before starting — add or remove questions here if anything's off.
@@ -1245,7 +1357,11 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
             return (
               <div key={sec.id} className="mt-card p-5">
                 <div className="flex items-center gap-2 mb-4">
-                  <input className="mt-input mt-serif font-semibold flex-1" value={sec.name} onChange={(e) => updateSection(sIdx, { name: e.target.value })} />
+                  {paper.sections.length > 1 ? (
+                    <input className="mt-input mt-serif font-semibold flex-1" value={sec.name} onChange={(e) => updateSection(sIdx, { name: e.target.value })} />
+                  ) : (
+                    <div className="flex-1" />
+                  )}
                   <button
                     className="mt-btn mt-btn-ghost"
                     onClick={() => toggleGroupingMode(sIdx)}
@@ -1261,7 +1377,9 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
                   >
                     <Shuffle size={14} /> {paper.sections.length > 1 ? 'Shuffle' : 'Shuffle all'}
                   </button>
-                  <button className="mt-btn mt-btn-danger" onClick={() => removeSection(sIdx)} title="Remove section"><Trash2 size={14} /></button>
+                  {paper.sections.length > 1 && (
+                    <button className="mt-btn mt-btn-danger" onClick={() => removeSection(sIdx)} title="Remove section"><Trash2 size={14} /></button>
+                  )}
                 </div>
 
                 {isGrouping && (
@@ -1515,6 +1633,7 @@ function ConfigureScreen({ paper, onBack, onStart }) {
           </div>
         </div>
 
+        {paper.sections.length > 1 && (
         <div className="mt-card p-5 mb-4">
           <label className="flex items-center gap-2 cursor-pointer mb-3">
             <input type="checkbox" checked={useSectionTiming} onChange={(e) => setUseSectionTiming(e.target.checked)} />
@@ -1535,6 +1654,7 @@ function ConfigureScreen({ paper, onBack, onStart }) {
             </div>
           )}
         </div>
+        )}
 
         <div className="mt-card p-5 mb-4">
           <label className="flex items-center gap-2 cursor-pointer mb-3">
@@ -1706,6 +1826,28 @@ function enforceGroupLimit(state, q) {
   return { ...state, answers, status, answerOrder: { ...state.answerOrder, [q.orGroup]: order } };
 }
 
+// Persists the live test attempt (paper + config + full reducer state) so
+// that if the mobile OS/browser reclaims or reloads the page after the app
+// is backgrounded/switched — which is what was silently discontinuing the
+// test — the attempt can be transparently resumed exactly where it left off
+// instead of being lost. Best-effort: storage errors (private mode, full
+// quota, etc.) are swallowed since autosave should never crash the test.
+const TEST_PROGRESS_KEY = 'mocksy_test_progress_v1';
+function saveTestProgress(paper, config, state) {
+  try {
+    localStorage.setItem(TEST_PROGRESS_KEY, JSON.stringify({ paper, config, state, savedAt: Date.now() }));
+  } catch (e) { /* ignore — autosave is best-effort */ }
+}
+function loadTestProgress() {
+  try {
+    const raw = localStorage.getItem(TEST_PROGRESS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function clearTestProgress() {
+  try { localStorage.removeItem(TEST_PROGRESS_KEY); } catch (e) { /* ignore */ }
+}
+
 function initTestState(paper, config) {
   const flatQuestions = buildFlatQuestions(paper);
   const sectionRemaining = {};
@@ -1723,7 +1865,8 @@ function initTestState(paper, config) {
     questionRemaining: config.useQuestionTiming ? config.questionSeconds : null,
     lockedSections: {},
     finished: false,
-    startedAt: Date.now()
+    startedAt: Date.now(),
+    lastTickAt: Date.now()
   };
 }
 
@@ -1814,12 +1957,17 @@ function testReducer(state, action) {
     }
     case 'TICK': {
       if (state.finished) return state;
+      const now = action.now || Date.now();
+      // Real elapsed seconds since the last tick, not a flat 1 — this is what
+      // makes the countdown self-correct after the interval was throttled or
+      // paused (e.g. the tab/app was backgrounded), instead of drifting.
+      const elapsed = Math.max(1, Math.round((now - (state.lastTickAt || now)) / 1000));
       const q = state.flatQuestions[state.currentIndex];
-      const overallRemaining = state.overallRemaining - 1;
-      const timeSpent = { ...state.timeSpent, [q.id]: (state.timeSpent[q.id] || 0) + 1 };
+      const overallRemaining = Math.max(0, state.overallRemaining - elapsed);
+      const timeSpent = { ...state.timeSpent, [q.id]: (state.timeSpent[q.id] || 0) + elapsed };
 
       if (overallRemaining <= 0) {
-        return { ...state, overallRemaining: 0, timeSpent, finished: true };
+        return { ...state, overallRemaining: 0, timeSpent, finished: true, lastTickAt: now };
       }
 
       let sectionRemaining = state.sectionRemaining;
@@ -1830,7 +1978,7 @@ function testReducer(state, action) {
       let finished = false;
 
       if (state.config.useSectionTiming) {
-        const secLeft = (state.sectionRemaining[q.sectionId] ?? 0) - 1;
+        const secLeft = (state.sectionRemaining[q.sectionId] ?? 0) - elapsed;
         sectionRemaining = { ...state.sectionRemaining, [q.sectionId]: Math.max(0, secLeft) };
         if (secLeft <= 0) {
           lockedSections = { ...state.lockedSections, [q.sectionId]: true };
@@ -1846,7 +1994,7 @@ function testReducer(state, action) {
       }
 
       if (!finished && state.config.useQuestionTiming && questionRemaining !== null) {
-        const qLeft = questionRemaining - 1;
+        const qLeft = questionRemaining - elapsed;
         if (qLeft <= 0) {
           const nextIdx = firstUnlockedIndexFrom({ ...state, lockedSections }, currentIndex + 1, 1);
           if (nextIdx !== -1 && nextIdx !== currentIndex) {
@@ -1861,7 +2009,7 @@ function testReducer(state, action) {
         }
       }
 
-      return { ...state, overallRemaining, timeSpent, sectionRemaining, lockedSections, currentIndex, questionRemaining, status, finished };
+      return { ...state, overallRemaining, timeSpent, sectionRemaining, lockedSections, currentIndex, questionRemaining, status, finished, lastTickAt: now };
     }
     case 'SUBMIT':
       return { ...state, finished: true };
@@ -2119,13 +2267,33 @@ function useIsDesktop() {
 }
 
 function TestScreen({ paper, config, onFinish }) {
-  const [state, dispatch] = useReducer(testReducer, undefined, () => initTestState(paper, config));
+  const [state, dispatch] = useReducer(testReducer, undefined, () => {
+    // If the app was switched away, backgrounded, or the page got reloaded
+    // mid-test (common on mobile when the OS reclaims memory), resume the
+    // saved attempt instead of silently restarting a fresh one.
+    const saved = loadTestProgress();
+    if (
+      saved && saved.state && !saved.state.finished && saved.paper && saved.config &&
+      saved.paper.title === paper.title &&
+      saved.state.flatQuestions.length === buildFlatQuestions(paper).length
+    ) {
+      return saved.state;
+    }
+    return initTestState(paper, config);
+  });
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [showPaletteMobile, setShowPaletteMobile] = useState(false);
   const [showFsPrompt, setShowFsPrompt] = useState(false);
   const isDesktop = useIsDesktop();
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // Autosave every change (answers, navigation, timer ticks) so an
+  // interrupted attempt — app switched, tab backgrounded, page reloaded —
+  // can be resumed exactly where it left off rather than discontinuing.
+  useEffect(() => {
+    if (!state.finished) saveTestProgress(paper, config, state);
+  }, [state, paper, config]);
 
   // Safety net: if the window is (or becomes) desktop-sized while the mobile
   // palette drawer thinks it's open — e.g. the browser was resized/maximized,
@@ -2138,8 +2306,22 @@ function TestScreen({ paper, config, onFinish }) {
   }, [isDesktop, showPaletteMobile]);
 
   useEffect(() => {
-    const interval = setInterval(() => dispatch({ type: 'TICK' }), 1000);
-    return () => clearInterval(interval);
+    const tick = () => dispatch({ type: 'TICK', now: Date.now() });
+    const interval = setInterval(tick, 1000);
+    // Mobile browsers throttle/suspend setInterval while the app is in the
+    // background or another app is switched to. Rather than let the clock
+    // silently stall, resync immediately (elapsed-time-based TICK catches up
+    // in one shot) the moment the app is visible/focused again.
+    const onVisible = () => { if (document.visibilityState === 'visible') tick(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', tick);
+    window.addEventListener('pageshow', tick);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', tick);
+      window.removeEventListener('pageshow', tick);
+    };
   }, []);
 
   // Enter fullscreen as soon as the test screen mounts (fallback in case
@@ -2163,6 +2345,7 @@ function TestScreen({ paper, config, onFinish }) {
 
   useEffect(() => {
     if (state.finished) {
+      clearTestProgress();
       exitFullscreen();
       onFinish(state);
     }
@@ -2196,7 +2379,7 @@ function TestScreen({ paper, config, onFinish }) {
       <div className="border-b mt-hairline px-3 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-2 md:gap-3 flex-shrink-0" style={{ background: '#fff' }}>
         <div className="min-w-0">
           <div className="mt-serif font-semibold text-sm md:text-base truncate">{paper.title}</div>
-          <div className="text-xs truncate" style={{ color: 'var(--ink-soft)' }}>{q.sectionName} · Q{state.currentIndex + 1} of {state.flatQuestions.length}</div>
+          <div className="text-xs truncate" style={{ color: 'var(--ink-soft)' }}>{paper.sections.length > 1 ? `${q.sectionName} · ` : ''}Q{state.currentIndex + 1} of {state.flatQuestions.length}</div>
         </div>
         <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
           {state.config.useSectionTiming && (
@@ -2377,12 +2560,12 @@ function TestScreen({ paper, config, onFinish }) {
       <div className="flex-shrink-0 border-t mt-hairline px-2.5 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-1.5 md:gap-2" style={{ background: '#fff' }}>
         <div className="flex items-center gap-1.5 md:gap-2">
           <button className="mt-btn mt-btn-ghost" onClick={() => dispatch({ type: 'PREV' })} disabled={state.currentIndex === 0}><ChevronLeft size={15} /> <span className="hidden sm:inline">Previous</span></button>
-          <button className="mt-btn mt-btn-ghost" onClick={() => dispatch({ type: 'CLEAR' })} disabled={isLocked}><RotateCcw size={14} /> <span className="hidden sm:inline">Clear</span></button>
+          <button className="mt-btn mt-btn-outline-accent" onClick={() => { dispatch({ type: 'TOGGLE_MARK' }); dispatch({ type: 'NEXT' }); }} disabled={isLocked}><Flag size={14} /> <span className="hidden sm:inline">Mark for Review &amp; Next</span><span className="sm:hidden">Mark</span></button>
+          <button className="mt-btn mt-btn-outline-accent" onClick={() => dispatch({ type: 'CLEAR' })} disabled={isLocked}><RotateCcw size={14} /> <span className="hidden sm:inline">Clear Response</span><span className="sm:hidden">Clear</span></button>
         </div>
         <div className="flex items-center gap-1.5 md:gap-2">
-          <button className="mt-btn mt-btn-review" onClick={() => { dispatch({ type: 'TOGGLE_MARK' }); dispatch({ type: 'NEXT' }); }} disabled={isLocked}><Flag size={14} /> <span className="hidden sm:inline">Mark & Next</span></button>
           <button className="mt-btn mt-btn-primary" onClick={() => dispatch({ type: 'NEXT' })}><span className="hidden sm:inline">Save & Next</span><span className="sm:hidden">Next</span> <ChevronRight size={15} /></button>
-          <button className="mt-btn mt-btn-brass" onClick={() => setShowSubmitModal(true)}>Submit</button>
+          <button className="mt-btn mt-btn-brass" onClick={() => setShowSubmitModal(true)}><span className="hidden sm:inline">Submit Test</span><span className="sm:hidden">Submit</span></button>
         </div>
       </div>
 
@@ -2443,10 +2626,12 @@ function PaletteContent({ state, dispatch, counts, sections, onGoto }) {
         if (!qs.length) return null;
         return (
           <div key={sec.id} className="mb-4">
-            <div className="text-xs font-semibold mb-2 flex items-center gap-1.5" style={{ color: 'var(--ink-soft)' }}>
-              {sec.name}
-              {state.lockedSections[sec.id] && <span className="text-xs" style={{ color: 'var(--alert)' }}>(locked)</span>}
-            </div>
+            {sections.length > 1 && (
+              <div className="text-xs font-semibold mb-2 flex items-center gap-1.5" style={{ color: 'var(--ink-soft)' }}>
+                {sec.name}
+                {state.lockedSections[sec.id] && <span className="text-xs" style={{ color: 'var(--alert)' }}>(locked)</span>}
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               {qs.map(({ fq, idx }) => (
                 <button
@@ -2971,12 +3156,15 @@ function SiteHeader({ showInstall }) {
    ROOT APP — exported as MockTestApp
    ============================================================ */
 export default function MockTestApp() {
-  const [stage, setStage] = useState('upload'); // upload | review | configure | test | results
-  const [paper, setPaper] = useState(null);
-  const [config, setConfig] = useState(null);
+  const savedProgressRef = useRef(loadTestProgress());
+  const hasResumable = !!(savedProgressRef.current && savedProgressRef.current.state && !savedProgressRef.current.state.finished && savedProgressRef.current.paper && savedProgressRef.current.config);
+
+  const [stage, setStage] = useState(hasResumable ? 'test' : 'upload');
+  const [paper, setPaper] = useState(hasResumable ? savedProgressRef.current.paper : null);
+  const [config, setConfig] = useState(hasResumable ? savedProgressRef.current.config : null);
   const [finalState, setFinalState] = useState(null);
 
-  const reset = () => { setStage('upload'); setPaper(null); setConfig(null); setFinalState(null); };
+  const reset = () => { clearTestProgress(); setStage('upload'); setPaper(null); setConfig(null); setFinalState(null); };
 
   return (
     <div className="mt-root mt-app-shell">
