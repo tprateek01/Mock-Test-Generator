@@ -698,7 +698,12 @@ async function extractQuestions(sourceParts, onProgress) {
   // already have — this is what keeps the final count exactly matching the
   // source instead of drifting over.
   const seenQuestionNumbers = new Set();
-  let globalSeq = 0;
+  // Plain object (not `let`) so the forEach callbacks below — recreated each
+  // while-loop iteration — close over a stable `const` binding instead of a
+  // reassigned loop variable. Functionally identical to `let globalSeq = 0;
+  // globalSeq++`, but avoids ESLint's no-loop-func rule, which CRA's build
+  // treats as a hard error under CI=true (as on Vercel).
+  const seqRef = { current: 0 };
 
   const MAX_ITERATIONS = 60;
   const MAX_RECONCILE_ROUNDS = 6;
@@ -761,7 +766,7 @@ async function extractQuestions(sourceParts, onProgress) {
           // Internal-only, used to restore original document order below —
           // stripped before the paper is returned.
           __qn: questionNumber,
-          __seq: globalSeq++
+          __seq: seqRef.current++
         });
       });
     });
