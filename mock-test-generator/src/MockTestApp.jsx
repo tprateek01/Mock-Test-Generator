@@ -563,13 +563,24 @@ function GlobalStyles() {
 let _id = 0;
 const uid = (p = 'x') => `${p}_${Date.now().toString(36)}_${(_id++).toString(36)}`;
 
-// negativeMarking on config is an object keyed by question type, e.g. { mcq: 0.33, msq: 0, numeric: 0, short: 0 }.
-// Falls back gracefully if it's ever just a plain number (older config shape).
-function getNegativeMarking(config, type) {
+// negativeMarking on config is an object keyed by question type. Each entry is
+// either a plain number (flat rate for every question of that type — the
+// older config shape, still supported) or { mode: 'flat'|'byMarks', flat,
+// byMarks: { [marksValue]: rate } } so a paper that mixes e.g. 1-mark and
+// 2-mark MCQs can penalize them differently (common in exams like GATE/JEE
+// where the negative mark is often set relative to the question's own marks).
+function getNegativeMarking(config, type, marks) {
   const nm = config && config.negativeMarking;
   if (nm == null) return 0;
   if (typeof nm === 'number') return nm;
-  return nm[type] || 0;
+  const entry = nm[type];
+  if (entry == null) return 0;
+  if (typeof entry === 'number') return entry;
+  if (entry.mode === 'byMarks' && entry.byMarks) {
+    const key = String(marks);
+    if (Object.prototype.hasOwnProperty.call(entry.byMarks, key)) return entry.byMarks[key] || 0;
+  }
+  return entry.flat || 0;
 }
 
 function fmtClock(totalSeconds) {
@@ -637,7 +648,7 @@ function parseJsonLoose(text) {
 const EXTRACTION_SYSTEM = `You extract exam questions from a source document into strict JSON. Output ONLY minified JSON — no markdown fences, no commentary, no preamble.
 
 Schema:
-{"title":"string","totalQuestionsInSource":number|null,"sections":[{"name":"string","questions":[{"type":"mcq|msq|numeric|short|descriptive","text":"string","options":["string"]|null,"marks":number,"correctAnswer":"string"|["string"]|null,"orGroup":"string"|null,"orGroupChoose":number|null}]}],"complete":boolean}
+{"title":"string","totalQuestionsInSource":number|null,"sections":[{"name":"string","questions":[{"type":"mcq|msq|numeric|short|descriptive","questionNumber":number,"text":"string","options":["string"]|null,"marks":number,"correctAnswer":"string"|["string"]|null,"orGroup":"string"|null,"orGroupChoose":number|null}]}],"complete":boolean}
 
 Rules:
 - "mcq" = multiple choice, exactly ONE correct option. "msq" = multiple SELECT, TWO OR MORE correct options (common in GATE-style papers, often marked "one or more options may be correct"). "numeric" = requires a numeric answer, no options. "short" = brief word/phrase/one-line answer. "descriptive" = long-form written answer.
@@ -651,6 +662,8 @@ Rules:
   - Do not invent OR groups — only mark them when the source's wording clearly states the choice (words like "either...or", "OR", "any N of the following", "attempt any N questions").
 - Group questions under their section headings exactly as they appear (e.g. "Section A", "Physics", "Part I"). If there are no explicit sections, use one section named "Section 1".
 - Preserve original question order.
+- questionNumber: an integer giving this question's position in the reading order of the ENTIRE source, counted continuously across ALL sections and ALL of your responses (1, 2, 3, ... in the exact order the questions appear in the document) — never restart the count at a new section or at a new response, even if the source's own printed labels restart per section (e.g. "Section B" starting again at "Q1" on the page still gets the next continuous questionNumber after the last question of Section A, not 1). This is purely a sequencing field for reassembling the correct order later — it is separate from, and may differ from, any printed question label. Every question must get a unique questionNumber; never reuse or skip one, and never repeat a questionNumber already used in an earlier response.
+- Extract EVERY question exactly once — no more, no fewer, and never a duplicate of one already sent (including during a later re-scan/reconciliation pass: if you find a question that looks similar to one you already extracted, only include it if it is genuinely a different question at a different questionNumber).
 - totalQuestionsInSource: on your FIRST response only, scan the whole source (page numbers, question numbering, "Q1..Q100" style headers, table of contents, etc.) and give your best-effort count of the TOTAL number of questions the source actually contains, even though you will only extract a partial batch in this response. This is a sanity check used to make sure nothing gets missed later — take it seriously and base it on real evidence in the document (highest question number visible, explicit counts stated, etc.), not a guess. On later continuation responses, repeat the same number (or refine it if you now have better evidence), or null if truly unknowable.
 - Your response has a strict output-length budget. Include as many COMPLETE questions as fit — never cut a question, an option list, or a passage in half. If you reach the budget before finishing the source, stop right after the last fully-written question and set "complete": false. If you have covered the entire source, set "complete": true.
 - When told to continue, resume immediately after the last question you already sent. Never repeat a question.
@@ -680,6 +693,12 @@ async function extractQuestions(sourceParts, onProgress) {
   let expectedTotal = null;
   let reconcileRounds = 0;
   let staleStreak = 0;
+  // Tracks every questionNumber already accepted, so a later batch (e.g. a
+  // reconciliation re-scan) can't sneak in a duplicate of a question we
+  // already have — this is what keeps the final count exactly matching the
+  // source instead of drifting over.
+  const seenQuestionNumbers = new Set();
+  let globalSeq = 0;
 
   const MAX_ITERATIONS = 60;
   const MAX_RECONCILE_ROUNDS = 6;
@@ -724,6 +743,12 @@ async function extractQuestions(sourceParts, onProgress) {
         }
         const orGroup = typeof q.orGroup === 'string' && q.orGroup.trim() ? q.orGroup.trim() : null;
         const orGroupChoose = orGroup && typeof q.orGroupChoose === 'number' && q.orGroupChoose > 0 ? Math.floor(q.orGroupChoose) : (orGroup ? 1 : null);
+        const questionNumber = typeof q.questionNumber === 'number' && isFinite(q.questionNumber) ? q.questionNumber : null;
+        // A question with a questionNumber we've already accepted is a
+        // duplicate (most likely re-sent during a reconciliation re-scan) —
+        // skip it so counts don't inflate and order doesn't get corrupted.
+        if (questionNumber !== null && seenQuestionNumbers.has(questionNumber)) return;
+        if (questionNumber !== null) seenQuestionNumbers.add(questionNumber);
         existing.questions.push({
           id: uid('q'),
           type,
@@ -732,7 +757,11 @@ async function extractQuestions(sourceParts, onProgress) {
           marks: typeof q.marks === 'number' && q.marks > 0 ? q.marks : 1,
           correctAnswer,
           orGroup,
-          orGroupChoose
+          orGroupChoose,
+          // Internal-only, used to restore original document order below —
+          // stripped before the paper is returned.
+          __qn: questionNumber,
+          __seq: globalSeq++
         });
       });
     });
@@ -761,7 +790,23 @@ async function extractQuestions(sourceParts, onProgress) {
 
     break;
   }
-  return { title, sections };
+
+  // Restore original document order. Normal continuation batches already
+  // arrive in order, but a reconciliation re-scan (used to catch questions
+  // the model missed the first time around) appends whatever it finds to
+  // the end of a section's array — which can leave an earlier question
+  // sitting after later ones. Sorting by the model's questionNumber (with
+  // arrival order as a stable fallback when it's missing) fixes that so the
+  // final paper always matches the source's own question order.
+  sections.forEach(sec => {
+    sec.questions.sort((a, b) => {
+      if (a.__qn !== null && b.__qn !== null && a.__qn !== b.__qn) return a.__qn - b.__qn;
+      return a.__seq - b.__seq;
+    });
+    sec.questions.forEach(q => { delete q.__qn; delete q.__seq; });
+  });
+
+  return { title, sections, expectedTotal };
 }
 
 /* ============================================================
@@ -1024,6 +1069,11 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
           <div className="mt-label mb-1">Paper title</div>
           <input className="mt-input mt-serif text-lg font-semibold" value={paper.title} onChange={(e) => updateTitle(e.target.value)} />
           <div className="text-sm mt-2" style={{ color: 'var(--ink-soft)' }}>{paper.sections.length} section{paper.sections.length === 1 ? '' : 's'} · {totalQ} question{totalQ === 1 ? '' : 's'} — check these over before you set the clock.</div>
+          {typeof paper.expectedTotal === 'number' && paper.expectedTotal > 0 && paper.expectedTotal !== totalQ && (
+            <div className="text-xs mt-2 px-3 py-2 rounded" style={{ background: 'var(--alert-soft)', color: 'var(--alert)' }}>
+              The source looked like it has about {paper.expectedTotal} question{paper.expectedTotal === 1 ? '' : 's'}, but {totalQ} {totalQ === 1 ? 'was' : 'were'} extracted. Double-check the sections below against the original before starting — add or remove questions here if anything's off.
+            </div>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -1255,9 +1305,21 @@ function ConfigureScreen({ paper, onBack, onStart }) {
     paper.sections.forEach(s => s.questions.forEach(q => set.add(q.type)));
     return ['mcq', 'msq', 'numeric', 'short'].filter(t => set.has(t));
   }, [paper]);
+  // Distinct marks values used by each question type, e.g. { mcq: [1, 2], numeric: [2] } —
+  // drives the optional "vary by marks" negative-marking rows below.
+  const marksByType = useMemo(() => {
+    const sets = {};
+    paper.sections.forEach(s => s.questions.forEach(q => {
+      if (!sets[q.type]) sets[q.type] = new Set();
+      sets[q.type].add(q.marks);
+    }));
+    const out = {};
+    Object.keys(sets).forEach(t => { out[t] = Array.from(sets[t]).sort((a, b) => a - b); });
+    return out;
+  }, [paper]);
   const [negativeMarking, setNegativeMarking] = useState(() => {
     const nm = {};
-    ['mcq', 'msq', 'numeric', 'short'].forEach(t => { nm[t] = 0; });
+    ['mcq', 'msq', 'numeric', 'short'].forEach(t => { nm[t] = { mode: 'flat', flat: 0, byMarks: {} }; });
     return nm;
   });
   const [calculatorEnabled, setCalculatorEnabled] = useState(false);
@@ -1319,22 +1381,57 @@ function ConfigureScreen({ paper, onBack, onStart }) {
 
         <div className="mt-card p-5 mb-4">
           <div className="mt-label mb-1">Negative marking</div>
-          <div className="text-xs mb-3" style={{ color: 'var(--ink-soft)' }}>Marks deducted for each wrong answer — set separately per question type (0 = off).</div>
+          <div className="text-xs mb-3" style={{ color: 'var(--ink-soft)' }}>Marks deducted for each wrong answer — set separately per question type (0 = off). If a type mixes questions worth different marks, you can also vary the penalty by marks.</div>
           {typesPresent.length === 0 ? (
             <div className="text-xs" style={{ color: 'var(--ink-faint)' }}>No auto-gradable question types (MCQ/MSQ/numeric/short) in this paper.</div>
           ) : (
-            <div className="space-y-2">
-              {typesPresent.map(t => (
-                <div key={t} className="flex items-center gap-3">
-                  <span className="text-sm flex-1">{QUESTION_TYPE_LABELS[t]}</span>
-                  <input
-                    type="number" min={0} step={0.25} className="mt-input w-24"
-                    value={negativeMarking[t]}
-                    onChange={(e) => setNegativeMarking({ ...negativeMarking, [t]: parseFloat(e.target.value) || 0 })}
-                  />
-                  <span className="text-xs" style={{ color: 'var(--ink-faint)' }}>marks off</span>
-                </div>
-              ))}
+            <div className="space-y-4">
+              {typesPresent.map(t => {
+                const cfg = negativeMarking[t];
+                const marksValues = marksByType[t] || [1];
+                const canVaryByMarks = marksValues.length > 1;
+                return (
+                  <div key={t} className={typesPresent.indexOf(t) < typesPresent.length - 1 ? 'pb-4 border-b mt-hairline' : ''}>
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="text-sm flex-1">{QUESTION_TYPE_LABELS[t]}</span>
+                      {canVaryByMarks && (
+                        <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: 'var(--ink-soft)' }}>
+                          <input
+                            type="checkbox"
+                            checked={cfg.mode === 'byMarks'}
+                            onChange={(e) => setNegativeMarking({ ...negativeMarking, [t]: { ...cfg, mode: e.target.checked ? 'byMarks' : 'flat' } })}
+                          />
+                          Vary by marks
+                        </label>
+                      )}
+                    </div>
+                    {cfg.mode === 'byMarks' && canVaryByMarks ? (
+                      <div className="space-y-2 pl-3">
+                        {marksValues.map(mk => (
+                          <div key={mk} className="flex items-center gap-3">
+                            <span className="text-xs flex-1" style={{ color: 'var(--ink-faint)' }}>{mk}-mark questions</span>
+                            <input
+                              type="number" min={0} step={0.25} className="mt-input w-24"
+                              value={cfg.byMarks[mk] ?? 0}
+                              onChange={(e) => setNegativeMarking({ ...negativeMarking, [t]: { ...cfg, byMarks: { ...cfg.byMarks, [mk]: parseFloat(e.target.value) || 0 } } })}
+                            />
+                            <span className="text-xs" style={{ color: 'var(--ink-faint)' }}>marks off</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3 pl-3">
+                        <input
+                          type="number" min={0} step={0.25} className="mt-input w-24"
+                          value={cfg.flat}
+                          onChange={(e) => setNegativeMarking({ ...negativeMarking, [t]: { ...cfg, flat: parseFloat(e.target.value) || 0 } })}
+                        />
+                        <span className="text-xs" style={{ color: 'var(--ink-faint)' }}>marks off{canVaryByMarks ? ' (same for every marks value)' : ''}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -2029,7 +2126,7 @@ function TestScreen({ paper, config, onFinish }) {
             <div className="text-xs mb-5" style={{ color: 'var(--ink-faint)' }}>
               {q.marks} mark{q.marks === 1 ? '' : 's'}
               {(() => {
-                const nm = getNegativeMarking(state.config, q.type);
+                const nm = getNegativeMarking(state.config, q.type, q.marks);
                 return nm > 0 ? ` · −${nm} if wrong` : '';
               })()}
               {q.type === 'msq' ? ' · one or more options may be correct' : ''}
@@ -2298,7 +2395,7 @@ function gradeTest(state) {
         correctCount++;
         verdict = 'correct';
       } else {
-        obtained -= getNegativeMarking(state.config, q.type);
+        obtained -= getNegativeMarking(state.config, q.type, q.marks);
         wrongCount++;
         verdict = 'wrong';
       }
@@ -2306,7 +2403,7 @@ function gradeTest(state) {
       if (!q.orGroup) maxObjective += q.marks;
       if (!hasAnswer) { if (!q.orGroup) unansweredObjective++; verdict = 'unanswered'; }
       else if (answerIsCorrect(q, ans)) { obtained += q.marks; correctCount++; verdict = 'correct'; }
-      else { obtained -= getNegativeMarking(state.config, q.type); wrongCount++; verdict = 'wrong'; needsReview.push(q); }
+      else { obtained -= getNegativeMarking(state.config, q.type, q.marks); wrongCount++; verdict = 'wrong'; needsReview.push(q); }
     } else {
       needsReview.push(q);
     }
