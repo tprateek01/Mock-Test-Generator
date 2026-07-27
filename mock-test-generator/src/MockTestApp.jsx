@@ -931,6 +931,67 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
 /* ============================================================
    SCREEN 1 — UPLOAD
    ============================================================ */
+// A number <input> that keeps its own "draft" text while focused instead of
+// being fully controlled by the parent's numeric state. Plain
+// `value={n} onChange={(e) => setN(parseInt(e.target.value) || fallback)}`
+// looks fine but is unusable: the instant the field is emptied (e.g. the
+// user backspaces a lone "1" to retype it) `parseInt('') || fallback`
+// snaps straight back to the fallback, so the backspace visibly does
+// nothing and the field can never be cleared to type a fresh number. Here,
+// blank/partial input ("", "-", "3.") is left alone until blur, only then
+// is it parsed, clamped to min/max, and pushed to the parent — so typing
+// feels normal and a mid-edit value never gets silently rewritten out from
+// under the user.
+function NumField({ value, onCommit, min, max, step, integer = true, className = '', style, placeholder }) {
+  const [draft, setDraft] = useState(String(value));
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) setDraft(String(value));
+  }, [value]);
+
+  const clamp = (n) => {
+    if (Number.isNaN(n)) n = min !== undefined ? min : 0;
+    if (integer) n = Math.round(n);
+    if (min !== undefined) n = Math.max(min, n);
+    if (max !== undefined) n = Math.min(max, n);
+    return n;
+  };
+
+  return (
+    <input
+      type="number"
+      min={min}
+      max={max}
+      step={step}
+      placeholder={placeholder}
+      className={className}
+      style={style}
+      value={draft}
+      onFocus={() => { focusedRef.current = true; }}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setDraft(raw);
+        // Mid-edit states ("", "-", trailing ".") are left as-is — no
+        // fallback substitution — so the user can keep typing/deleting
+        // freely. Once there's a real number, push it up live (unclamped)
+        // so anything depending on it (hints, totals) updates as you type;
+        // clamping only happens on blur, once the value is "final".
+        if (raw === '' || raw === '-' || /\.$/.test(raw)) return;
+        const n = parseFloat(raw);
+        if (!Number.isNaN(n)) onCommit(n);
+      }}
+      onBlur={() => {
+        focusedRef.current = false;
+        const n = clamp(parseFloat(draft));
+        onCommit(n);
+        setDraft(String(n));
+      }}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+    />
+  );
+}
+
 function UploadScreen({ onExtracted }) {
   const [mode, setMode] = useState('file'); // 'file' | 'paste'
   const [pastedText, setPastedText] = useState('');
@@ -1203,10 +1264,9 @@ function UploadScreen({ onExtracted }) {
             <div className="mt-3 pl-6">
               <div className="flex items-center gap-3">
                 <span className="text-sm flex-shrink-0" style={{ color: 'var(--ink-soft)' }}>{t.limitLabel}</span>
-                <input
-                  type="number" min={1} className="mt-input w-24"
-                  value={questionLimit}
-                  onChange={(e) => setQuestionLimit(Math.max(1, parseInt(e.target.value) || 1))}
+                <NumField
+                  min={1} className="mt-input w-24"
+                  value={questionLimit} onCommit={setQuestionLimit}
                 />
               </div>
               <div className="text-xs mt-1.5" style={{ color: 'var(--ink-faint)' }}>{t.limitHint(questionLimit)}</div>
@@ -1388,9 +1448,9 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
                     <span>Tick the alternative questions below ({selectedIds.size} selected), then say how many the candidate must answer.</span>
                     <label className="flex items-center gap-1 flex-shrink-0">
                       Answer
-                      <input
-                        type="number" min={1} max={Math.max(1, selectedIds.size - 1)} className="mt-input w-14"
-                        value={chooseCount} onChange={(e) => setChooseCount(parseInt(e.target.value) || 1)}
+                      <NumField
+                        min={1} max={Math.max(1, selectedIds.size - 1)} className="mt-input w-14"
+                        value={chooseCount} onCommit={setChooseCount}
                       />
                       of {selectedIds.size || '…'}
                     </label>
@@ -1407,10 +1467,9 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
                         <div key={gid} className="flex items-center gap-1.5 text-xs pl-2.5 pr-1.5 py-1 rounded-full" style={{ border: '1px solid var(--brass)', color: 'var(--ink)' }}>
                           <Link2 size={11} style={{ color: 'var(--brass)' }} />
                           <span>Choose</span>
-                          <input
-                            type="number" min={1} max={idxs.length} className="mt-input w-11" style={{ padding: '0.1rem 0.3rem' }}
-                            value={chosen}
-                            onChange={(e) => setGroupChoose(sIdx, gid, Math.max(1, Math.min(idxs.length, parseInt(e.target.value) || 1)))}
+                          <NumField
+                            min={1} max={idxs.length} className="mt-input w-11" style={{ padding: '0.1rem 0.3rem' }}
+                            value={chosen} onCommit={(n) => setGroupChoose(sIdx, gid, n)}
                           />
                           <span>of {idxs.length} — Q{idxs.map(i => i + 1).join(', Q')}</span>
                           <button className="mt-btn mt-btn-ghost" style={{ padding: '0.15rem 0.35rem' }} onClick={() => ungroupQuestions(sIdx, gid)} title="Remove this OR group">
@@ -1526,7 +1585,7 @@ function QuestionEditRow({ q, index, onChange, onRemove, selectable, selected, o
         </select>
         <label className="text-xs flex items-center gap-1" style={{ color: 'var(--ink-soft)' }}>
           Marks
-          <input type="number" min={0} step={0.5} className="mt-input w-16" value={q.marks} onChange={(e) => onChange({ marks: parseFloat(e.target.value) || 0 })} />
+          <NumField min={0} step={0.5} integer={false} className="mt-input w-16" value={q.marks} onCommit={(n) => onChange({ marks: n })} />
         </label>
       </div>
 
@@ -1628,7 +1687,7 @@ function ConfigureScreen({ paper, onBack, onStart }) {
         <div className="mt-card p-5 mb-4">
           <div className="mt-label mb-2">Total test duration</div>
           <div className="flex items-center gap-3">
-            <input type="number" min={1} className="mt-input w-28" value={totalMinutes} onChange={(e) => setTotalMinutes(parseInt(e.target.value) || 0)} />
+            <NumField min={1} className="mt-input w-28" value={totalMinutes} onCommit={setTotalMinutes} />
             <span className="text-sm" style={{ color: 'var(--ink-soft)' }}>minutes — the exam auto-submits when this reaches zero</span>
           </div>
         </div>
@@ -1644,7 +1703,7 @@ function ConfigureScreen({ paper, onBack, onStart }) {
               {paper.sections.map(s => (
                 <div key={s.id} className="flex items-center gap-3">
                   <span className="text-sm flex-1">{s.name} <span style={{ color: 'var(--ink-faint)' }}>({s.questions.length} q)</span></span>
-                  <input type="number" min={1} className="mt-input w-20" value={sectionMinutes[s.id] || 0} onChange={(e) => setSectionMinutes({ ...sectionMinutes, [s.id]: parseInt(e.target.value) || 0 })} />
+                  <NumField min={1} className="mt-input w-20" value={sectionMinutes[s.id] || 0} onCommit={(n) => setSectionMinutes({ ...sectionMinutes, [s.id]: n })} />
                   <span className="text-xs" style={{ color: 'var(--ink-faint)' }}>min</span>
                 </div>
               ))}
@@ -1663,7 +1722,7 @@ function ConfigureScreen({ paper, onBack, onStart }) {
           </label>
           {useQuestionTiming && (
             <div className="flex items-center gap-3 pl-6">
-              <input type="number" min={5} className="mt-input w-24" value={questionSeconds} onChange={(e) => setQuestionSeconds(parseInt(e.target.value) || 0)} />
+              <NumField min={5} className="mt-input w-24" value={questionSeconds} onCommit={setQuestionSeconds} />
               <span className="text-sm" style={{ color: 'var(--ink-soft)' }}>seconds per question — auto-advances when it hits zero</span>
             </div>
           )}
@@ -1700,10 +1759,10 @@ function ConfigureScreen({ paper, onBack, onStart }) {
                         {marksValues.map(mk => (
                           <div key={mk} className="flex items-center gap-3">
                             <span className="text-xs flex-1" style={{ color: 'var(--ink-faint)' }}>{mk}-mark questions</span>
-                            <input
-                              type="number" min={0} step={0.25} className="mt-input w-24"
+                            <NumField
+                              min={0} step={0.25} integer={false} className="mt-input w-24"
                               value={cfg.byMarks[mk] ?? 0}
-                              onChange={(e) => setNegativeMarking({ ...negativeMarking, [t]: { ...cfg, byMarks: { ...cfg.byMarks, [mk]: parseFloat(e.target.value) || 0 } } })}
+                              onCommit={(n) => setNegativeMarking({ ...negativeMarking, [t]: { ...cfg, byMarks: { ...cfg.byMarks, [mk]: n } } })}
                             />
                             <span className="text-xs" style={{ color: 'var(--ink-faint)' }}>marks off</span>
                           </div>
@@ -1711,10 +1770,10 @@ function ConfigureScreen({ paper, onBack, onStart }) {
                       </div>
                     ) : (
                       <div className="flex items-center gap-3 pl-3">
-                        <input
-                          type="number" min={0} step={0.25} className="mt-input w-24"
+                        <NumField
+                          min={0} step={0.25} integer={false} className="mt-input w-24"
                           value={cfg.flat}
-                          onChange={(e) => setNegativeMarking({ ...negativeMarking, [t]: { ...cfg, flat: parseFloat(e.target.value) || 0 } })}
+                          onCommit={(n) => setNegativeMarking({ ...negativeMarking, [t]: { ...cfg, flat: n } })}
                         />
                         <span className="text-xs" style={{ color: 'var(--ink-faint)' }}>marks off{canVaryByMarks ? ' (same for every marks value)' : ''}</span>
                       </div>
