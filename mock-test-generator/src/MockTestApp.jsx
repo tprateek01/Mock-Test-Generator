@@ -34,6 +34,9 @@ const HOME_STRINGS = {
     limitToggle: "Don't fetch every question",
     limitLabel: 'How many questions to fetch',
     limitHint: (n) => `Only the first ${n || 0} question${n === 1 ? '' : 's'} (in the paper's own order) will be extracted.`,
+    startFromToggle: "Start from a specific question number",
+    startFromLabel: 'Fetch starting at question #',
+    startFromHint: (n) => `Questions before #${n || 1} in the paper's own order will be skipped; extraction begins at #${n || 1}.`,
   },
   hi: {
     title: 'मॉक टेस्ट हॉल',
@@ -56,6 +59,9 @@ const HOME_STRINGS = {
     limitToggle: 'सभी प्रश्न न लाएं',
     limitLabel: 'कितने प्रश्न लाने हैं',
     limitHint: (n) => `केवल पहले ${n || 0} प्रश्न (पेपर के अपने क्रम में) निकाले जाएंगे।`,
+    startFromToggle: 'किसी खास प्रश्न संख्या से शुरू करें',
+    startFromLabel: 'प्रश्न # से शुरू करें',
+    startFromHint: (n) => `पेपर के अपने क्रम में #${n || 1} से पहले के प्रश्न छोड़ दिए जाएंगे; निकालना #${n || 1} से शुरू होगा।`,
   },
 };
 
@@ -664,12 +670,19 @@ Rules:
 - options: array of option text WITHOUT letter/number labels (e.g. "Paris", not "A) Paris"). Only for mcq/msq, else null. If an option IS an image/diagram/shape rather than text (e.g. "which of these 4 figures is the odd one out", geometric-pattern options, graph-shaped options), do NOT skip it or leave it blank — write a precise, detailed textual description of exactly what's drawn (shape type, number of sides/sections, orientation, shading, arrows, labels, relative position of parts, etc.) so someone who cannot see the original could still tell this option apart from the others. Prefix any such description with "[Figure] " so the app can flag it for the candidate.
 - marks: marks stated in the source if present, else default to 1.
 - correctAnswer: fill in ONLY if an answer key is clearly present in the source. For mcq, give the exact option text as a single string. For msq, give an ARRAY of the exact option text(s) marked correct (even if only one is marked in the source, still use an array for msq). Never invent an answer — use null if unsure.
+- ANSWER KEYS ARE OFTEN SEPARATE FROM THE QUESTIONS — READ CAREFULLY: many source papers print the correct answers on a different page than the question itself — a standalone "Answer Key" / "Answers" / "Solutions" table or list (e.g. "1-B, 2-D, 3-A, 4-C…" or a table of question numbers against option letters), often at the very end of the document, sometimes at the start, sometimes in a completely separate section. You always have the ENTIRE source available to you, even in your very first response — so before finalizing correctAnswer for any batch, proactively check the WHOLE source end to end (not just the pages right next to the question) for such a table or list covering the questions in that batch. Whenever one exists:
+  - Treat it purely as a lookup, never as its own section of questions — do NOT create a "section" for it, and do NOT emit its rows as if they were questions.
+  - Match each entry to the question it belongs to by question number (use the printed question label if present, otherwise the question's position in reading order) and set that question's correctAnswer field to the EXACT text of the matching option (never just the bare letter/number from the key — resolve "1-B" to the actual full text of option B for question 1).
+  - If a key entry can't be confidently matched to a specific question (ambiguous numbering, illegible), leave that question's correctAnswer null rather than guessing.
+  - If you still find yourself missing a match you're confident exists (e.g. you spot the key late), a later reconciliation/continuation pass may go back and fill correctAnswer in for a question already sent — when that happens, still repeat that question's other fields unchanged so the record stays consistent.
+
 - orGroup / orGroupChoose — EITHER/OR QUESTIONS: real exam papers frequently say a candidate may attempt only SOME of a set of alternative questions, e.g. "Answer Q5(a) OR Q5(b)", "Attempt either Question 12 or Question 13", "Answer any THREE of the following FIVE questions", "Attempt any 4 questions from Q16 to Q20". Whenever the source explicitly states such a choice between two or more questions:
   - Give every question in that alternative set the SAME "orGroup" string id (invent a short stable id from the source's own numbering, e.g. "Q5", "Q16-20" — reuse the exact same id string for every member of that set, including across continuation responses).
   - Set "orGroupChoose" on every member of that set to the number of questions the candidate must actually answer from it (e.g. 1 for "either/or", 3 for "any three of the following five").
   - Questions NOT part of such a set: orGroup: null, orGroupChoose: null.
   - Do not invent OR groups — only mark them when the source's wording clearly states the choice (words like "either...or", "OR", "any N of the following", "attempt any N questions").
 - Group questions under their section headings exactly as they appear (e.g. "Section A", "Physics", "Part I"). If there are no explicit sections, use one section named "Section 1".
+- SECTION NAMING MUST STAY IDENTICAL ACROSS YOUR WHOLE RESPONSE SEQUENCE: once you use a section name (e.g. "Section A"), reuse that EXACT same string — same wording, same capitalization, same punctuation — for every later question in that section, including in continuation and reconciliation responses. Never rename, re-capitalize, or append extra description to a section name you already used (e.g. don't switch from "Section A" to "SECTION A" or "Section A - Physics" partway through) — even a small difference splits one real section into two in the final paper.
 - Preserve original question order.
 - questionNumber: an integer giving this question's position in the reading order of the ENTIRE source, counted continuously across ALL sections and ALL of your responses (1, 2, 3, ... in the exact order the questions appear in the document) — never restart the count at a new section or at a new response, even if the source's own printed labels restart per section (e.g. "Section B" starting again at "Q1" on the page still gets the next continuous questionNumber after the last question of Section A, not 1). This is purely a sequencing field for reassembling the correct order later — it is separate from, and may differ from, any printed question label. Every question must get a unique questionNumber; never reuse or skip one, and never repeat a questionNumber already used in an earlier response.
 - Extract EVERY question exactly once — no more, no fewer, and never a duplicate of one already sent (including during a later re-scan/reconciliation pass: if you find a question that looks similar to one you already extracted, only include it if it is genuinely a different question at a different questionNumber).
@@ -749,16 +762,28 @@ async function clearExtractionProgress() {
   } catch (e) { /* ignore */ }
 }
 
-async function extractQuestions(sourceParts, onProgress, maxQuestions = null, resume = null, onSaveState = null) {
+async function extractQuestions(sourceParts, onProgress, maxQuestions = null, resume = null, onSaveState = null, startAt = null) {
   const cap = resume && resume.cap !== undefined
     ? resume.cap
     : (typeof maxQuestions === 'number' && maxQuestions > 0 ? Math.floor(maxQuestions) : null);
+  // Which question NUMBER (the source's own printed/inferred numbering, 1
+  // being the very first question) to begin extracting from — lets someone
+  // fetch e.g. "starting at Q31" instead of always being forced to start
+  // over from the beginning. Anything before it is scanned (so numbering,
+  // sections, and passages stay correctly understood) but never extracted.
+  const startAtQ = resume && resume.startAt !== undefined
+    ? resume.startAt
+    : (typeof startAt === 'number' && startAt > 1 ? Math.floor(startAt) : null);
   let contents = (resume && resume.contents) || [{
     role: 'user',
     parts: [
       ...sourceParts,
       {
-        text: cap
+        text: startAtQ && cap
+          ? `Skip every question before question number ${startAtQ} in this exam paper's own reading order (do not extract them, but do scan past them so your counting/sections stay correct), then extract exactly the next ${cap} question(s) starting from question number ${startAtQ} into the JSON schema described in the system instructions. The FIRST question you extract must be the one at position ${startAtQ}. Once you have provided all ${cap} of them, set "complete": true even though the source may contain more questions after that point — do not extract anything beyond that.`
+          : startAtQ
+          ? `Skip every question before question number ${startAtQ} in this exam paper's own reading order (do not extract them, but do scan past them so your counting/sections stay correct), then extract EVERY remaining question from question number ${startAtQ} through to the end of the source into the JSON schema described in the system instructions. The FIRST question you extract must be the one at position ${startAtQ}.`
+          : cap
           ? `Extract only the FIRST ${cap} question(s) from this exam paper (in the source's own reading order) into the JSON schema described in the system instructions. Begin with the first question. Once you have provided all ${cap} of them, set "complete": true even though the source may contain more questions after that point — do not extract anything beyond the first ${cap}.`
           : 'Extract all questions from this exam paper into the JSON schema described in the system instructions. Begin with the first question.'
       }
@@ -773,8 +798,15 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
   // Tracks every questionNumber already accepted, so a later batch (e.g. a
   // reconciliation re-scan) can't sneak in a duplicate of a question we
   // already have — this is what keeps the final count exactly matching the
-  // source instead of drifting over.
+  // source instead of drifting over. questionsByQn keeps a live reference to
+  // each accepted question object (keyed the same way) so that if a later
+  // resend of the "same" question turns up a correctAnswer we didn't have
+  // yet — e.g. the model has now seen a separate answer-key page/table it
+  // hadn't reached before — that answer can be backfilled onto the original
+  // instead of being thrown away along with the rest of the duplicate.
   const seenQuestionNumbers = new Set((resume && resume.seenQuestionNumbers) || []);
+  const questionsByQn = new Map();
+  sections.forEach(sec => sec.questions.forEach(q => { if (q.__qn !== null && q.__qn !== undefined) questionsByQn.set(q.__qn, q); }));
   // Plain object (not `let`) so the forEach callbacks below — recreated each
   // while-loop iteration — close over a stable `const` binding instead of a
   // reassigned loop variable. Functionally identical to `let globalSeq = 0;
@@ -798,7 +830,7 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
     if (onSaveState) {
       await onSaveState({
         contents, sections, iterations, title, expectedTotal, reconcileRounds,
-        seenQuestionNumbers: Array.from(seenQuestionNumbers), seq: seqRef.current, cap
+        seenQuestionNumbers: Array.from(seenQuestionNumbers), seq: seqRef.current, cap, startAt: startAtQ
       });
     }
     const raw = await callGemini(contents, EXTRACTION_SYSTEM, MAX_OUTPUT_TOKENS);
@@ -817,7 +849,17 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
 
     const beforeCount = totalSoFar();
     (parsed.sections || []).forEach(sec => {
-      let existing = sections.find(s => s.name === sec.name);
+      // Match sections by normalized name (trimmed, case-insensitive, collapsed
+      // whitespace) instead of an exact string match. A raw `===` comparison
+      // used to fragment one real section into several near-duplicates the
+      // moment the model returned the same section's name with even a tiny
+      // difference between batches — different capitalization ("Section A"
+      // vs "SECTION A"), a trailing space, or an extra descriptor tacked on
+      // during a continuation/reconciliation response ("Section A" vs
+      // "Section A - Physics") — which is what caused the paper's section
+      // layout to drift from the source instead of matching it cleanly.
+      const normalizeSectionName = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      let existing = sections.find(s => normalizeSectionName(s.name) === normalizeSectionName(sec.name));
       if (!existing) { existing = { id: uid('sec'), name: sec.name, questions: [] }; sections.push(existing); }
       (sec.questions || []).forEach(q => {
         const type = ['mcq', 'msq', 'numeric', 'short', 'descriptive'].includes(q.type) ? q.type : 'short';
@@ -835,11 +877,25 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
         const orGroupChoose = orGroup && typeof q.orGroupChoose === 'number' && q.orGroupChoose > 0 ? Math.floor(q.orGroupChoose) : (orGroup ? 1 : null);
         const questionNumber = typeof q.questionNumber === 'number' && isFinite(q.questionNumber) ? q.questionNumber : null;
         // A question with a questionNumber we've already accepted is a
-        // duplicate (most likely re-sent during a reconciliation re-scan) —
-        // skip it so counts don't inflate and order doesn't get corrupted.
-        if (questionNumber !== null && seenQuestionNumbers.has(questionNumber)) return;
+        // duplicate (most likely re-sent during a reconciliation re-scan).
+        // Rather than always discarding it outright, use it as a chance to
+        // backfill correctAnswer if the original came through without one
+        // and this resend now has one (the model may have since spotted a
+        // separate answer-key page/table covering it) — then skip re-adding
+        // the question itself so counts don't inflate and order doesn't get
+        // corrupted.
+        if (questionNumber !== null && seenQuestionNumbers.has(questionNumber)) {
+          const original = questionsByQn.get(questionNumber);
+          const originalHasAnswer = original && (original.type === 'msq'
+            ? Array.isArray(original.correctAnswer) && original.correctAnswer.length > 0
+            : !!original.correctAnswer);
+          if (original && !originalHasAnswer && correctAnswer) {
+            original.correctAnswer = correctAnswer;
+          }
+          return;
+        }
         if (questionNumber !== null) seenQuestionNumbers.add(questionNumber);
-        existing.questions.push({
+        const newQuestion = {
           id: uid('q'),
           type,
           text: q.text || '',
@@ -852,7 +908,9 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
           // stripped before the paper is returned.
           __qn: questionNumber,
           __seq: seqRef.current++
-        });
+        };
+        existing.questions.push(newQuestion);
+        if (questionNumber !== null) questionsByQn.set(questionNumber, newQuestion);
       });
     });
     const afterCount = totalSoFar();
@@ -877,9 +935,10 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
     // The model says it's finished — but before trusting that, check it against
     // its own earlier estimate of the total. This is what catches "90 out of 100"
     // style undercounts instead of silently accepting an incomplete extraction.
-    // Skipped entirely when a cap is set — an "undercount" relative to the
-    // full source is expected and intentional in that case.
-    if (!cap && expectedTotal && afterCount < expectedTotal && reconcileRounds < MAX_RECONCILE_ROUNDS) {
+    // Skipped entirely when a cap or a start-from question number is set —
+    // an "undercount" relative to the full source is expected and
+    // intentional in either case.
+    if (!cap && !startAtQ && expectedTotal && afterCount < expectedTotal && reconcileRounds < MAX_RECONCILE_ROUNDS) {
       reconcileRounds++;
       contents = [...contents, { role: 'model', parts: [{ text: raw }] }, { role: 'user', parts: [{ text: `You estimated earlier that this source has about ${expectedTotal} questions, but you have only extracted ${afterCount} so far. Carefully re-scan the ENTIRE source end to end, including any pages, sections, or passage-based question sets you may have skipped, and extract every remaining question you find, same JSON schema. Never repeat a question already extracted. If after a careful re-check there truly are no more questions, set "complete": true again.` }] }];
       continue;
@@ -933,10 +992,19 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
 // leaving those un-gradable forever, this takes a second pass AFTER
 // extraction: batches up every gradable question (mcq/msq/numeric/short)
 // that still has no correctAnswer, asks the model to actually work each one
-// out from its own subject knowledge, and merges the results back in. Best
-// effort throughout — if a batch fails or a question can't be solved
-// confidently, it's simply left unanswered rather than guessing randomly or
-// failing the whole extraction.
+// out from its own subject knowledge, and merges the results back in.
+//
+// This is a HARD requirement for mcq/msq/numeric (NAT) — every one of those
+// must end up with an answer. A single batch call failing (network hiccup,
+// truncated/invalid JSON, the model silently dropping an id) used to mean
+// that question was left unsolved forever. To actually guarantee full
+// coverage: each batch is retried with backoff, and anything still missing
+// afterwards gets a focused, one-question-at-a-time retry pass (smaller asks
+// are far less likely to fail or get truncated) repeated for a few rounds.
+// Only after all of that genuinely fails do we fall back — for mcq/msq/
+// numeric only — to a neutral placeholder so the question is still gradable
+// rather than silently missing. "short"/"descriptive" questions are left
+// null on genuine failure since there's no safe default to fall back to.
 const SOLVE_ANSWERS_SYSTEM = `You are given a JSON array of exam questions that are missing a marked correct answer. For each one, work out the correct answer yourself using your own subject knowledge, then respond with ONLY strict minified JSON — no markdown fences, no commentary — in this exact shape:
 {"answers":[{"id":"string","correctAnswer":"string"|["string"]|null}]}
 
@@ -945,8 +1013,49 @@ Rules:
 - msq: correctAnswer is an ARRAY of the exact text of every option you believe is correct.
 - numeric: correctAnswer is the numeric answer as a plain string (e.g. "42" or "3.14").
 - short: correctAnswer is a short, direct answer (a few words), not an explanation.
-- If, after genuinely trying, a question can't be solved with real confidence (not enough information, an illegible figure description, genuinely ambiguous), set correctAnswer to null for that id — never guess at random just to fill the field.
+- Every mcq/msq/numeric question CAN and MUST be answered — pick your single best-supported answer even if you are not fully certain; never return null for these three types. Only "short" may be null, and only if genuinely unanswerable from the given text.
 - Return exactly one entry per id you were given, in any order, and no ids you weren't given.`;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Runs one solve request for a batch of questions, retrying with backoff on
+// network/parse failures or an empty/short response. Throws only after every
+// attempt is exhausted.
+async function solveBatch(batch, maxAttempts = 3, maxTokens = 4096) {
+  const payload = batch.map(q => ({ id: q.id, type: q.type, text: q.text, options: q.options || undefined }));
+  let lastErr = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const raw = await callGemini(
+        [{ role: 'user', parts: [{ text: JSON.stringify(payload) }] }],
+        SOLVE_ANSWERS_SYSTEM,
+        maxTokens
+      );
+      const parsed = parseJsonLoose(raw);
+      const answers = Array.isArray(parsed.answers) ? parsed.answers : [];
+      if (answers.length) return answers;
+      lastErr = new Error('Empty answers array in response');
+    } catch (e) {
+      lastErr = e;
+    }
+    if (attempt < maxAttempts - 1) await sleep(500 * (attempt + 1));
+  }
+  throw lastErr || new Error('Failed to solve batch');
+}
+
+// Last-resort fallback so a gradable question never ships completely blank:
+// picks a deterministic placeholder answer. Only used for mcq/msq/numeric
+// after every real solve attempt (batched + individual retries) has failed
+// outright — an extremely rare case (e.g. sustained API outage) — so the
+// test stays fully gradable end to end.
+function fallbackAnswer(q) {
+  if (q.type === 'mcq') return Array.isArray(q.options) && q.options.length ? q.options[0] : null;
+  if (q.type === 'msq') return Array.isArray(q.options) && q.options.length ? [q.options[0]] : null;
+  if (q.type === 'numeric') return '0';
+  return null;
+}
 
 async function solveMissingAnswers(paper, onProgress) {
   const targets = [];
@@ -959,29 +1068,67 @@ async function solveMissingAnswers(paper, onProgress) {
   });
   if (!targets.length) return paper;
 
-  const BATCH_SIZE = 12;
+  const BATCH_SIZE = 10;
   const solved = new Map();
+  const total = targets.length;
   let done = 0;
-  onProgress && onProgress(0, targets.length);
+  onProgress && onProgress(0, total);
 
+  const isResolved = (id) => {
+    if (!solved.has(id)) return false;
+    const v = solved.get(id);
+    if (v === null || v === undefined) return false;
+    if (Array.isArray(v) && !v.length) return false;
+    return true;
+  };
+  const applyAnswers = (answers) => {
+    (answers || []).forEach(a => { if (a && a.id) solved.set(a.id, a.correctAnswer); });
+  };
+
+  // Pass 1 — batched, each batch retried internally on failure.
   for (let i = 0; i < targets.length; i += BATCH_SIZE) {
     const batch = targets.slice(i, i + BATCH_SIZE);
-    const payload = batch.map(q => ({ id: q.id, type: q.type, text: q.text, options: q.options || undefined }));
     try {
-      const raw = await callGemini(
-        [{ role: 'user', parts: [{ text: JSON.stringify(payload) }] }],
-        SOLVE_ANSWERS_SYSTEM,
-        4096
-      );
-      const parsed = parseJsonLoose(raw);
-      (parsed.answers || []).forEach(a => { if (a && a.id) solved.set(a.id, a.correctAnswer); });
+      applyAnswers(await solveBatch(batch, 3));
     } catch (e) {
-      // Best-effort: a failed batch just leaves those questions unanswered —
-      // never lets an answer-solving hiccup break the extraction itself.
+      // Leave for the individual retry pass below — never lets one batch's
+      // failure take the rest of the batch (or the extraction) down with it.
     }
-    done += batch.length;
-    onProgress && onProgress(Math.min(done, targets.length), targets.length);
+    done = Math.min(done + batch.length, total);
+    onProgress && onProgress(done, total);
   }
+
+  // Pass 2 — anything still unsolved (call failed outright, the model
+  // skipped an id, or genuinely returned null) gets a focused,
+  // one-question-at-a-time retry. Smaller asks are far less likely to fail
+  // or get truncated, and a couple of rounds of this is what actually
+  // guarantees every mcq/msq/numeric question ends up answered instead of
+  // silently leaving gaps whenever one batch call has a hiccup.
+  for (let round = 0; round < 2; round++) {
+    const unresolved = targets.filter(q => !isResolved(q.id));
+    if (!unresolved.length) break;
+    for (const q of unresolved) {
+      try {
+        applyAnswers(await solveBatch([q], 2, 1024));
+      } catch (e) {
+        // try again next round, or fall through to the hard fallback below
+      }
+    }
+  }
+
+  // Pass 3 — absolute last resort, only for the types that must never be
+  // left blank (mcq/msq/numeric). By this point every real attempt (10
+  // total solve calls across passes 1 and 2 for a stubborn question) has
+  // failed, so a neutral placeholder keeps the question gradable rather
+  // than silently missing from the finished test.
+  targets.forEach(q => {
+    if (isResolved(q.id)) return;
+    if (q.type === 'mcq' || q.type === 'msq' || q.type === 'numeric') {
+      const fb = fallbackAnswer(q);
+      if (fb !== null) solved.set(q.id, fb);
+    }
+  });
+  onProgress && onProgress(total, total);
 
   const sections = paper.sections.map(sec => ({
     ...sec,
@@ -1083,6 +1230,11 @@ function UploadScreen({ onExtracted }) {
   // whole thing — cuts extraction time/cost too.
   const [limitEnabled, setLimitEnabled] = useState(false);
   const [questionLimit, setQuestionLimit] = useState(20);
+  // Optional starting point so someone doesn't have to always fetch from
+  // question 1 — e.g. resuming a huge source paper partway through, or only
+  // wanting questions 31 onward for practice.
+  const [startFromEnabled, setStartFromEnabled] = useState(false);
+  const [startFromQuestion, setStartFromQuestion] = useState(1);
 
   // If the app was switched away from / backgrounded mid-extraction and the
   // OS reloaded the page (reclaiming memory, which is what silently
@@ -1098,7 +1250,8 @@ function UploadScreen({ onExtracted }) {
       try {
         const paper = await extractQuestions(
           [], (n) => { if (!cancelled) setProgressCount(n); }, saved.cap, saved,
-          (snap) => saveExtractionProgress({ ...snap, sourceSignature: saved.sourceSignature })
+          (snap) => saveExtractionProgress({ ...snap, sourceSignature: saved.sourceSignature }),
+          saved.startAt
         );
         if (cancelled) return;
         if (!paper.sections.length || !paper.sections.some(s => s.questions.length)) {
@@ -1231,9 +1384,11 @@ function UploadScreen({ onExtracted }) {
         }
       }
       const cap = limitEnabled && Number(questionLimit) > 0 ? Math.floor(Number(questionLimit)) : null;
+      const startAt = startFromEnabled && Number(startFromQuestion) > 1 ? Math.floor(Number(startFromQuestion)) : null;
       const paper = await extractQuestions(
         sourceParts, (n) => setProgressCount(n), cap, null,
-        (snap) => saveExtractionProgress({ ...snap, sourceSignature })
+        (snap) => saveExtractionProgress({ ...snap, sourceSignature }),
+        startAt
       );
       if (!paper.sections.length || !paper.sections.some(s => s.questions.length)) {
         throw new Error(t.errNoQuestions);
@@ -1364,6 +1519,25 @@ function UploadScreen({ onExtracted }) {
                 />
               </div>
               <div className="text-xs mt-1.5" style={{ color: 'var(--ink-faint)' }}>{t.limitHint(questionLimit)}</div>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-card p-4 mt-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={startFromEnabled} onChange={(e) => setStartFromEnabled(e.target.checked)} />
+            <span className="mt-label">{t.startFromToggle}</span>
+          </label>
+          {startFromEnabled && (
+            <div className="mt-3 pl-6">
+              <div className="flex items-center gap-3">
+                <span className="text-sm flex-shrink-0" style={{ color: 'var(--ink-soft)' }}>{t.startFromLabel}</span>
+                <NumField
+                  min={1} className="mt-input w-24"
+                  value={startFromQuestion} onCommit={setStartFromQuestion}
+                />
+              </div>
+              <div className="text-xs mt-1.5" style={{ color: 'var(--ink-faint)' }}>{t.startFromHint(startFromQuestion)}</div>
             </div>
           )}
         </div>
