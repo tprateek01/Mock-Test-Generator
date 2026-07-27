@@ -928,6 +928,78 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
   return { title, sections: finalSections, expectedTotal: cap ? null : expectedTotal };
 }
 
+// Not every source paper comes with an answer key — plenty of scanned past
+// papers or question banks have no marked correct option at all. Rather than
+// leaving those un-gradable forever, this takes a second pass AFTER
+// extraction: batches up every gradable question (mcq/msq/numeric/short)
+// that still has no correctAnswer, asks the model to actually work each one
+// out from its own subject knowledge, and merges the results back in. Best
+// effort throughout — if a batch fails or a question can't be solved
+// confidently, it's simply left unanswered rather than guessing randomly or
+// failing the whole extraction.
+const SOLVE_ANSWERS_SYSTEM = `You are given a JSON array of exam questions that are missing a marked correct answer. For each one, work out the correct answer yourself using your own subject knowledge, then respond with ONLY strict minified JSON — no markdown fences, no commentary — in this exact shape:
+{"answers":[{"id":"string","correctAnswer":"string"|["string"]|null}]}
+
+Rules:
+- mcq: correctAnswer is the EXACT text of one of that question's given options, copied verbatim (not paraphrased, not re-ordered).
+- msq: correctAnswer is an ARRAY of the exact text of every option you believe is correct.
+- numeric: correctAnswer is the numeric answer as a plain string (e.g. "42" or "3.14").
+- short: correctAnswer is a short, direct answer (a few words), not an explanation.
+- If, after genuinely trying, a question can't be solved with real confidence (not enough information, an illegible figure description, genuinely ambiguous), set correctAnswer to null for that id — never guess at random just to fill the field.
+- Return exactly one entry per id you were given, in any order, and no ids you weren't given.`;
+
+async function solveMissingAnswers(paper, onProgress) {
+  const targets = [];
+  paper.sections.forEach(sec => {
+    sec.questions.forEach(q => {
+      const gradableType = q.type === 'mcq' || q.type === 'msq' || q.type === 'numeric' || q.type === 'short';
+      const hasAnswer = q.type === 'msq' ? Array.isArray(q.correctAnswer) && q.correctAnswer.length > 0 : !!q.correctAnswer;
+      if (gradableType && !hasAnswer) targets.push(q);
+    });
+  });
+  if (!targets.length) return paper;
+
+  const BATCH_SIZE = 12;
+  const solved = new Map();
+  let done = 0;
+  onProgress && onProgress(0, targets.length);
+
+  for (let i = 0; i < targets.length; i += BATCH_SIZE) {
+    const batch = targets.slice(i, i + BATCH_SIZE);
+    const payload = batch.map(q => ({ id: q.id, type: q.type, text: q.text, options: q.options || undefined }));
+    try {
+      const raw = await callGemini(
+        [{ role: 'user', parts: [{ text: JSON.stringify(payload) }] }],
+        SOLVE_ANSWERS_SYSTEM,
+        4096
+      );
+      const parsed = parseJsonLoose(raw);
+      (parsed.answers || []).forEach(a => { if (a && a.id) solved.set(a.id, a.correctAnswer); });
+    } catch (e) {
+      // Best-effort: a failed batch just leaves those questions unanswered —
+      // never lets an answer-solving hiccup break the extraction itself.
+    }
+    done += batch.length;
+    onProgress && onProgress(Math.min(done, targets.length), targets.length);
+  }
+
+  const sections = paper.sections.map(sec => ({
+    ...sec,
+    questions: sec.questions.map(q => {
+      if (!solved.has(q.id)) return q;
+      let ans = solved.get(q.id);
+      if (q.type === 'msq') {
+        ans = Array.isArray(ans) ? ans.filter(Boolean) : (ans ? [ans] : null);
+        if (ans && !ans.length) ans = null;
+      } else if (Array.isArray(ans)) {
+        ans = ans[0] || null;
+      }
+      return ans ? { ...q, correctAnswer: ans } : q;
+    })
+  }));
+  return { ...paper, sections };
+}
+
 /* ============================================================
    SCREEN 1 — UPLOAD
    ============================================================ */
@@ -997,8 +1069,9 @@ function UploadScreen({ onExtracted }) {
   const [pastedText, setPastedText] = useState('');
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
-  const [status, setStatus] = useState('idle'); // idle | working | error
+  const [status, setStatus] = useState('idle'); // idle | working | solving | error
   const [progressCount, setProgressCount] = useState(0);
+  const [solveProgress, setSolveProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState('');
   const inputRef = useRef(null);
   // Home-page-only display language. Purely cosmetic — doesn't touch
@@ -1031,8 +1104,11 @@ function UploadScreen({ onExtracted }) {
         if (!paper.sections.length || !paper.sections.some(s => s.questions.length)) {
           throw new Error(t.errNoQuestions);
         }
+        setStatus('solving');
+        const solved = await solveMissingAnswers(paper, (d, total) => { if (!cancelled) setSolveProgress({ done: d, total }); });
+        if (cancelled) return;
         await clearExtractionProgress();
-        onExtracted(paper);
+        onExtracted(solved);
       } catch (e) {
         if (cancelled) return;
         await clearExtractionProgress();
@@ -1162,8 +1238,10 @@ function UploadScreen({ onExtracted }) {
       if (!paper.sections.length || !paper.sections.some(s => s.questions.length)) {
         throw new Error(t.errNoQuestions);
       }
+      setStatus('solving');
+      const solved = await solveMissingAnswers(paper, (d, total) => setSolveProgress({ done: d, total }));
       await clearExtractionProgress();
-      onExtracted(paper);
+      onExtracted(solved);
     } catch (e) {
       await clearExtractionProgress();
       setError(e.message || t.errGeneric);
@@ -1181,6 +1259,22 @@ function UploadScreen({ onExtracted }) {
             {progressCount > 0
               ? (limitEnabled && questionLimit > 0 ? `${progressCount} of ${questionLimit} question${questionLimit === 1 ? '' : 's'} extracted so far` : t.questionsExtracted(progressCount))
               : t.scanning}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'solving') {
+    return (
+      <div className="min-h-full flex items-center justify-center p-6">
+        <div className="mt-card mt-fade-in p-10 max-w-md w-full text-center">
+          <Loader2 className="w-8 h-8 mx-auto mb-4 animate-spin" style={{ color: 'var(--brass)' }} />
+          <div className="mt-serif text-lg font-semibold mb-1">Working out missing answers</div>
+          <div className="text-sm" style={{ color: 'var(--ink-soft)' }}>
+            {solveProgress.total > 0
+              ? `${solveProgress.done} of ${solveProgress.total} question${solveProgress.total === 1 ? '' : 's'} without an answer key solved so far`
+              : 'Checking which questions still need a correct answer…'}
           </div>
         </div>
       </div>
@@ -2606,16 +2700,24 @@ function TestScreen({ paper, config, onFinish }) {
           </div>
         </div>
 
-        {/* Palette sidebar (desktop) */}
+        {/* Palette sidebar (desktop) — palette scrolls, Submit Test stays
+            pinned at the bottom of the sidebar itself (not the question
+            action bar), matching the reference layout. */}
         {isDesktop && (
-          <div className="w-72 border-l mt-hairline overflow-y-auto mt-scrollbar p-4" style={{ background: '#fff' }}>
-            <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} />
+          <div className="w-72 border-l mt-hairline flex flex-col" style={{ background: '#fff' }}>
+            <div className="flex-1 overflow-y-auto mt-scrollbar p-4">
+              <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} />
+            </div>
+            <div className="flex-shrink-0 p-4 border-t mt-hairline">
+              <button className="mt-btn mt-btn-brass w-full justify-center" onClick={() => setShowSubmitModal(true)}>Submit Test</button>
+            </div>
           </div>
         )}
       </div>
 
       {/* Bottom action bar — stays fixed at the bottom of the viewport; only the
-          question panel above scrolls. Labels collapse to icons on narrow screens. */}
+          question panel above scrolls. Labels collapse to icons on narrow screens.
+          Submit Test lives in the sidebar/palette drawer instead of here. */}
       <div className="flex-shrink-0 border-t mt-hairline px-2.5 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-1.5 md:gap-2" style={{ background: '#fff' }}>
         <div className="flex items-center gap-1.5 md:gap-2">
           <button className="mt-btn mt-btn-ghost" onClick={() => dispatch({ type: 'PREV' })} disabled={state.currentIndex === 0}><ChevronLeft size={15} /> <span className="hidden sm:inline">Previous</span></button>
@@ -2624,15 +2726,22 @@ function TestScreen({ paper, config, onFinish }) {
         </div>
         <div className="flex items-center gap-1.5 md:gap-2">
           <button className="mt-btn mt-btn-primary" onClick={() => dispatch({ type: 'NEXT' })}><span className="hidden sm:inline">Save & Next</span><span className="sm:hidden">Next</span> <ChevronRight size={15} /></button>
-          <button className="mt-btn mt-btn-brass" onClick={() => setShowSubmitModal(true)}><span className="hidden sm:inline">Submit Test</span><span className="sm:hidden">Submit</span></button>
+          {!isDesktop && (
+            <button className="mt-btn mt-btn-brass" onClick={() => setShowSubmitModal(true)}><span className="hidden sm:inline">Submit Test</span><span className="sm:hidden">Submit</span></button>
+          )}
         </div>
       </div>
 
       {!isDesktop && showPaletteMobile && (
         <div className="fixed inset-0 z-40 flex justify-end" style={{ background: 'rgba(28,37,65,0.4)' }} onClick={() => setShowPaletteMobile(false)}>
-          <div className="w-72 max-w-[85vw] h-full bg-white p-4 overflow-y-auto mt-scrollbar" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-end mb-2"><button onClick={() => setShowPaletteMobile(false)}><X size={18} /></button></div>
-            <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} onGoto={() => setShowPaletteMobile(false)} />
+          <div className="w-72 max-w-[85vw] h-full bg-white flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex-1 overflow-y-auto mt-scrollbar p-4">
+              <div className="flex justify-end mb-2"><button onClick={() => setShowPaletteMobile(false)}><X size={18} /></button></div>
+              <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} onGoto={() => setShowPaletteMobile(false)} />
+            </div>
+            <div className="flex-shrink-0 p-4 border-t mt-hairline">
+              <button className="mt-btn mt-btn-brass w-full justify-center" onClick={() => { setShowPaletteMobile(false); setShowSubmitModal(true); }}>Submit Test</button>
+            </div>
           </div>
         </div>
       )}
