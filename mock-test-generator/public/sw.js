@@ -5,14 +5,22 @@
    updates are picked up quickly but the app never shows a blank screen
    when the network is unavailable. */
 
-const CACHE_VERSION = 'mocksy-v1';
+// Bumped from v1 -> v2: the old cache had permanently pinned the previous
+// logo192/512/apple-touch-icon bytes (which had transparent corners that
+// rendered as a black square behind the logo on the install splash screen
+// and iOS home-screen icon). Because static assets are served cache-first,
+// simply replacing those files on the server was NOT enough — the already-
+// installed app kept serving the old cached bytes forever. Bumping the
+// version here is what makes `activate` below actually delete the old
+// cache and start fresh with the corrected, opaque icons.
+const CACHE_VERSION = 'mocksy-v2';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.json',
   '/favicon.ico',
-  '/logo192.png',
-  '/logo512.png',
+  '/logo192.png?v=2',
+  '/logo512.png?v=2',
   '/mocksy-logo.jpg',
 ];
 
