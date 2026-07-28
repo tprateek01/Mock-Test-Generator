@@ -78,11 +78,26 @@ async function renderPageToCanvas(pdfDoc, pageNum) {
   return canvas;
 }
 
+// Google's Gemini models are natively trained on bounding boxes expressed as
+// integers on a 0-1000 scale (sometimes 0-100), regardless of what a prompt
+// asks for — that habit can leak through even when told explicitly to use a
+// 0-1 fraction. A bbox on the wrong scale produces coordinates like
+// [45, 120, 300, 400] instead of [0.045, 0.12, 0.30, 0.40]; fed straight
+// into a 0-1-fraction crop, that's wildly out of the page's actual bounds
+// and produces a degenerate (empty/negative-size) crop region every time.
+// Detect that and rescale back down to a true 0-1 fraction before cropping.
+function normalizeBboxScale(bbox) {
+  const maxAbs = Math.max(...bbox.map((n) => Math.abs(n)));
+  if (maxAbs <= 1.5) return bbox; // already a normal 0-1 fraction (small overshoot tolerated)
+  const scale = maxAbs <= 100 ? 100 : 1000; // 0-100 or 0-1000 convention
+  return bbox.map((n) => n / scale);
+}
+
 // Crops a normalized bbox ([x0,y0,x1,y1], each 0..1, origin top-left of the
 // page) out of a full-page canvas, with a margin so we don't shave off the
 // edge of the figure, and returns a compressed data URL.
-function cropCanvas(canvas, bbox) {
-  const [bx0, by0, bx1, by1] = bbox;
+function cropCanvas(canvas, rawBbox, figIdForLogging) {
+  const [bx0, by0, bx1, by1] = normalizeBboxScale(rawBbox);
   const w = canvas.width, h = canvas.height;
   // The bbox is only ever an AI's visual estimate of where a figure sits on
   // the page, never a pixel-exact measurement — so it's common for it to be
@@ -98,7 +113,10 @@ function cropCanvas(canvas, bbox) {
   const y1 = Math.min(1, Math.max(by0, by1) + pad) * h;
   const cw = Math.max(1, Math.round(x1 - x0));
   const ch = Math.max(1, Math.round(y1 - y0));
-  if (!isFinite(cw) || !isFinite(ch) || cw < 2 || ch < 2) return null;
+  if (!isFinite(cw) || !isFinite(ch) || cw < 2 || ch < 2) {
+    console.warn(`[pdfFigures] Degenerate crop region for "${figIdForLogging}" — raw bbox: [${rawBbox.join(', ')}], canvas: ${w}x${h}, computed rect: x0=${x0.toFixed(1)} y0=${y0.toFixed(1)} x1=${x1.toFixed(1)} y1=${y1.toFixed(1)} (cw=${cw}, ch=${ch})`);
+    return null;
+  }
   const out = document.createElement('canvas');
   out.width = cw;
   out.height = ch;
@@ -141,9 +159,8 @@ export async function renderFigureImages(fileOrArrayBuffer, figureRefs) {
         canvas = await renderPageToCanvas(pdfDoc, pageNum);
         pageCache.set(pageNum, canvas);
       }
-      const dataUrl = cropCanvas(canvas, fig.bbox);
+      const dataUrl = cropCanvas(canvas, fig.bbox, fig.id);
       if (dataUrl) result[fig.id] = dataUrl;
-      else console.warn(`[pdfFigures] Figure "${fig.id}" (page ${fig.page}) cropped to an empty/invalid region — bbox may be degenerate:`, fig.bbox);
     } catch (e) {
       // Skip this one figure; the text "[Figure] ..." description remains.
       console.warn(`[pdfFigures] Failed to render figure "${fig.id}" (page ${fig.page}):`, e);
