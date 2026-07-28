@@ -58,12 +58,19 @@ async function renderPageToCanvas(pdfDoc, pageNum) {
 }
 
 // Crops a normalized bbox ([x0,y0,x1,y1], each 0..1, origin top-left of the
-// page) out of a full-page canvas, with a small margin so we don't shave
-// off the edge of the figure, and returns a compressed data URL.
+// page) out of a full-page canvas, with a margin so we don't shave off the
+// edge of the figure, and returns a compressed data URL.
 function cropCanvas(canvas, bbox) {
   const [bx0, by0, bx1, by1] = bbox;
   const w = canvas.width, h = canvas.height;
-  const pad = 0.008; // ~0.8% margin
+  // The bbox is only ever an AI's visual estimate of where a figure sits on
+  // the page, never a pixel-exact measurement — so it's common for it to be
+  // a little too tight on one or more sides. A small ~0.8% pad wasn't enough
+  // slack to reliably cover that estimation error, which is what caused
+  // figures to render with an edge, label, or corner cut off. 3% (relative
+  // to whichever page dimension is larger) gives real breathing room while
+  // still cropping tightly enough that unrelated page content stays out.
+  const pad = 0.03; // ~3% margin
   const x0 = Math.max(0, Math.min(bx0, bx1) - pad) * w;
   const y0 = Math.max(0, Math.min(by0, by1) - pad) * h;
   const x1 = Math.min(1, Math.max(bx0, bx1) + pad) * w;
