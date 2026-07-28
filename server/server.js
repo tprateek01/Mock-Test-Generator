@@ -56,11 +56,15 @@ async function callGeminiModel(model, body) {
 
 app.post('/api/gemini', async (req, res) => {
   try {
-    const { contents, systemInstruction, maxOutputTokens } = req.body;
+    const { contents, systemInstruction, maxOutputTokens, tools } = req.body;
     const body = {
       contents,
       systemInstruction,
-      generationConfig: { maxOutputTokens: maxOutputTokens || 8192 }
+      generationConfig: { maxOutputTokens: maxOutputTokens || 8192 },
+      // Optional — the frontend passes tools: [{ codeExecution: {} }] when it
+      // wants Gemini to actually run Python (its real sandbox, not a guess)
+      // to verify the output of a "what does this code print?" question.
+      ...(tools ? { tools } : {})
     };
 
     let lastResult = null;

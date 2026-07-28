@@ -1020,6 +1020,113 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/* ------------------------------------------------------------
+   CODE QUESTIONS — "what does this code print?" style questions
+   get their answer verified by actually RUNNING code, instead of
+   the plain LLM-guess pass below. Gemini's code_execution tool
+   gives it a real Python sandbox (no extra API key or backend
+   service needed beyond the Gemini key already configured in
+   server.js) — for non-Python snippets we have the model
+   translate to an equivalent Python program preserving exact
+   semantics and execute THAT, which is far more reliable for
+   numeric/output-tracing questions than asking the model to
+   mentally simulate the program.
+   ------------------------------------------------------------ */
+
+// Heuristic-only, deliberately generous: false positives just mean a
+// question gets the (more expensive, tool-using) code-execution solve path
+// instead of the plain-guess one, which is strictly safe. False negatives
+// just fall through to the plain-guess pass as before, so nothing breaks
+// either way — this only needs to be "good enough", not perfect.
+const CODE_QUESTION_PHRASES = /output of the (following|above|given)\s+(code|program|snippet)|what (will|does|is)\s+(the\s+)?(program|code|snippet|following code)\s+(print|output|display|return)|trace the (code|program)|predict the output|value of\s+\w+\s+(after|when)\s+(the\s+)?(code|program|loop)\s+(executes|runs|completes)/i;
+const CODE_QUESTION_SIGNALS = [
+  /```/,                          // fenced code block
+  /#include\s*<\w+/i,             // C/C++
+  /public\s+(class|static)\b/,    // Java
+  /System\.out\.print/,           // Java
+  /\bvoid\s+main\s*\(/,           // C/C++
+  /\bint\s+main\s*\(/,            // C/C++
+  /def\s+\w+\s*\([^)]*\)\s*:/,    // Python
+  /console\.log\s*\(/,            // JS
+  /printf\s*\(/,                  // C/C++/general
+  /\bcout\s*<</,                  // C++
+  /\bprint\s*\(/,                 // Python/generic
+  /\bfor\s*\([^)]*;[^)]*;[^)]*\)/,// C-style for loop
+  /\b(int|float|double|char|String|var|let|const)\s+\w+\s*=\s*[^;]+;/, // typed declarations
+];
+function looksLikeCodeQuestion(text) {
+  if (!text) return false;
+  if (CODE_QUESTION_PHRASES.test(text)) return true;
+  let hits = 0;
+  for (const re of CODE_QUESTION_SIGNALS) { if (re.test(text)) hits++; if (hits >= 2) return true; }
+  return false;
+}
+
+const CODE_SOLVE_SYSTEM = `You are given a JSON array of exam questions, each centered on a piece of code (in any programming language) whose exact output or behaviour the candidate must determine. For each question, use the code_execution tool to ACTUALLY RUN the code and verify the true result — never guess.
+
+How to do this:
+- Locate the exact code snippet embedded in each question's "text".
+- If the code is already Python, run it as-is.
+- If it is written in another language (C, C++, Java, JavaScript, etc.), first translate it into an equivalent Python program that preserves the EXACT same semantics — same operator precedence and integer/float division rules, same loop bounds (watch for off-by-one differences between languages), same array/string indexing, same output formatting (printf/format-specifier rounding, string concatenation, newline behaviour) — then run that translation with the tool to obtain the real output. Watch for language-specific quirks: integer division truncation vs. float division, pre/post increment ordering, short-circuit evaluation, pass-by-value vs pass-by-reference, static/global variable retention across calls, string immutability/mutability.
+- Cross-check the executed result against the question's own options (if any) before finalizing.
+
+Once every question has a verified result, respond with ONLY one final strict minified JSON object — no markdown fences, no commentary — in this exact shape:
+{"answers":[{"id":"string","correctAnswer":"string"|["string"]|null}]}
+
+Rules:
+- mcq: correctAnswer is the EXACT text of one of that question's given options, copied verbatim, matching the option whose value equals the code's real, verified output.
+- msq: correctAnswer is an ARRAY of the exact text of every option you verified as correct.
+- numeric: correctAnswer is the verified numeric result as a plain string.
+- short: correctAnswer is the verified output as a short, direct string (preserve case/punctuation/spacing where it matters).
+- Every mcq/msq/numeric question CAN and MUST be answered — never return null for these three types. Only "short" may be null, and only if the code is genuinely unrunnable/incomplete.
+- Return exactly one entry per id you were given, in any order, and no ids you weren't given.`;
+
+async function callGeminiCodeExec(contents, systemInstruction, maxTokens = 4096) {
+  const resp = await fetch(`${API_BASE}/api/gemini`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents,
+      systemInstruction: { parts: [{ text: systemInstruction }] },
+      maxOutputTokens: maxTokens,
+      tools: [{ codeExecution: {} }]
+    })
+  });
+  if (!resp.ok) throw new Error(`API error ${resp.status}`);
+  const data = await resp.json();
+  const candidate = (data.candidates || [])[0];
+  const parts = (candidate && candidate.content && candidate.content.parts) || [];
+  // Interleaved executableCode/codeExecutionResult parts have no `.text`,
+  // so they're silently skipped here — only the model's final prose/JSON
+  // text parts are kept.
+  return parts.map(p => p.text || '').join('\n');
+}
+
+// Small batches — the code_execution tool round-trips (write code, run it,
+// read the result, sometimes retry) cost more tokens/time per question than
+// a plain guess, so keeping batches small avoids truncated responses.
+async function solveCodeBatch(batch, maxAttempts = 2, maxTokens = 4096) {
+  const payload = batch.map(q => ({ id: q.id, type: q.type, text: q.text, options: q.options || undefined }));
+  let lastErr = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const raw = await callGeminiCodeExec(
+        [{ role: 'user', parts: [{ text: JSON.stringify(payload) }] }],
+        CODE_SOLVE_SYSTEM,
+        maxTokens
+      );
+      const parsed = parseJsonLoose(raw);
+      const answers = Array.isArray(parsed.answers) ? parsed.answers : [];
+      if (answers.length) return answers;
+      lastErr = new Error('Empty answers array in response');
+    } catch (e) {
+      lastErr = e;
+    }
+    if (attempt < maxAttempts - 1) await sleep(500 * (attempt + 1));
+  }
+  throw lastErr || new Error('Failed to solve code batch');
+}
+
 // Runs one solve request for a batch of questions, retrying with backoff on
 // network/parse failures or an empty/short response. Throws only after every
 // attempt is exhausted.
@@ -1071,7 +1178,6 @@ async function solveMissingAnswers(paper, onProgress) {
   const BATCH_SIZE = 10;
   const solved = new Map();
   const total = targets.length;
-  let done = 0;
   onProgress && onProgress(0, total);
 
   const isResolved = (id) => {
@@ -1085,17 +1191,53 @@ async function solveMissingAnswers(paper, onProgress) {
     (answers || []).forEach(a => { if (a && a.id) solved.set(a.id, a.correctAnswer); });
   };
 
-  // Pass 1 — batched, each batch retried internally on failure.
-  for (let i = 0; i < targets.length; i += BATCH_SIZE) {
-    const batch = targets.slice(i, i + BATCH_SIZE);
+  // Progress is reported as "how many targets are resolved so far" rather
+  // than manually incremented per pass, since a question can pass through
+  // more than one pass (code-exec, then plain-guess fallback, then the
+  // individual retries) before it actually resolves.
+  const tickProgress = () => { onProgress && onProgress(targets.filter(q => isResolved(q.id)).length, total); };
+
+  // Pass 0 — "what does this code print?" style questions get their answer
+  // actually computed by running code (via Gemini's code_execution tool)
+  // instead of guessed. This runs first so the plain-guess pass 1 below
+  // never touches a question that pass 0 already resolved.
+  const codeTargets = targets.filter(q => looksLikeCodeQuestion(q.text));
+  const CODE_BATCH_SIZE = 4;
+  for (let i = 0; i < codeTargets.length; i += CODE_BATCH_SIZE) {
+    const batch = codeTargets.slice(i, i + CODE_BATCH_SIZE);
+    try {
+      applyAnswers(await solveCodeBatch(batch, 2));
+    } catch (e) {
+      // Falls through to the individual code-exec retry below, then to the
+      // plain-guess passes — never blocks the rest of the extraction.
+    }
+    tickProgress();
+  }
+  // One-question-at-a-time retry for any code question the batched pass
+  // missed (a smaller ask is less likely to get truncated).
+  const unresolvedCode = codeTargets.filter(q => !isResolved(q.id));
+  for (const q of unresolvedCode) {
+    try {
+      applyAnswers(await solveCodeBatch([q], 2, 2048));
+    } catch (e) {
+      // Leave for the plain-guess pass 1 below as a fallback.
+    }
+    tickProgress();
+  }
+
+  // Pass 1 — batched, each batch retried internally on failure. Covers
+  // every non-code target, plus any code target pass 0 couldn't resolve
+  // (e.g. code_execution tool unavailable) as a fallback.
+  const remaining = targets.filter(q => !isResolved(q.id));
+  for (let i = 0; i < remaining.length; i += BATCH_SIZE) {
+    const batch = remaining.slice(i, i + BATCH_SIZE);
     try {
       applyAnswers(await solveBatch(batch, 3));
     } catch (e) {
       // Leave for the individual retry pass below — never lets one batch's
       // failure take the rest of the batch (or the extraction) down with it.
     }
-    done = Math.min(done + batch.length, total);
-    onProgress && onProgress(done, total);
+    tickProgress();
   }
 
   // Pass 2 — anything still unsolved (call failed outright, the model
