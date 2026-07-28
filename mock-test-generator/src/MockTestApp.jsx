@@ -6,6 +6,7 @@ import {
   BarChart3, Layers, ArrowRight, Check, Calculator, Delete,
   Download, Share, SquarePlus, FileDown, Languages, Link2, Unlink, Shuffle
 } from 'lucide-react';
+import { renderFigureImages } from './pdfFigures';
 
 /* ------------------------------------------------------------
    HOME PAGE LANGUAGE STRINGS — English / Hindi toggle for the
@@ -616,6 +617,59 @@ function fileToBase64(file) {
   });
 }
 
+function base64ToArrayBuffer(base64) {
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+// Walks every question in an extracted paper and flattens out the
+// {id,page,bbox} figure references collected during extraction, so they can
+// all be rendered/cropped from the source PDF in one pass.
+function collectFigureRefs(paper) {
+  const refs = [];
+  (paper.sections || []).forEach((sec) => (sec.questions || []).forEach((q) => {
+    (q.figures || []).forEach((f) => refs.push(f));
+  }));
+  return refs;
+}
+
+// Finds the original PDF bytes tucked inside a saved/resumed extraction's
+// `contents` (the exact same inlineData part that was originally sent to
+// Gemini), so a resumed extraction can still crop real figures out of it
+// even though the user isn't re-uploading the file.
+function findPdfBytesInContents(contents) {
+  for (const msg of contents || []) {
+    for (const part of msg.parts || []) {
+      if (part && part.inlineData && part.inlineData.mimeType === 'application/pdf' && part.inlineData.data) {
+        return base64ToArrayBuffer(part.inlineData.data);
+      }
+    }
+  }
+  return null;
+}
+
+// Best-effort: crops every figure the model located out of the real PDF
+// pages and attaches the resulting pictures to the paper as `paper.figures`
+// ({ id: dataUrl }). Never throws — if pdf.js can't load, the source isn't
+// actually a PDF, or a figure fails to render, the "[Figure] ..." text
+// description already extracted stays as the fallback.
+async function attachFigureImages(paper, pdfSource) {
+  if (!pdfSource) return paper;
+  const refs = collectFigureRefs(paper);
+  if (!refs.length) return paper;
+  try {
+    const images = await renderFigureImages(pdfSource, refs);
+    if (images && Object.keys(images).length) {
+      return { ...paper, figures: images };
+    }
+  } catch (e) {
+    // best-effort only — extraction result is still fully usable without pictures
+  }
+  return paper;
+}
+
 // In dev, this stays empty and requests go through setupProxy.js to localhost:3001.
 // In production, set REACT_APP_API_BASE to your deployed backend's URL (see deployment notes).
 const API_BASE = process.env.REACT_APP_API_BASE || '';
@@ -663,7 +717,7 @@ function parseJsonLoose(text) {
 const EXTRACTION_SYSTEM = `You extract exam questions from a source document into strict JSON. Output ONLY minified JSON — no markdown fences, no commentary, no preamble.
 
 Schema:
-{"title":"string","totalQuestionsInSource":number|null,"sections":[{"name":"string","questions":[{"type":"mcq|msq|numeric|short|descriptive","questionNumber":number,"text":"string","options":["string"]|null,"marks":number,"correctAnswer":"string"|["string"]|null,"orGroup":"string"|null,"orGroupChoose":number|null}]}],"complete":boolean}
+{"title":"string","totalQuestionsInSource":number|null,"sections":[{"name":"string","questions":[{"type":"mcq|msq|numeric|short|descriptive","questionNumber":number,"text":"string","options":["string"]|null,"marks":number,"correctAnswer":"string"|["string"]|null,"orGroup":"string"|null,"orGroupChoose":number|null,"figures":[{"id":"string","page":number,"bbox":[number,number,number,number]}]|null}]}],"complete":boolean}
 
 Rules:
 - "mcq" = multiple choice, exactly ONE correct option. "msq" = multiple SELECT, TWO OR MORE correct options (common in GATE-style papers, often marked "one or more options may be correct"). "numeric" = requires a numeric answer, no options. "short" = brief word/phrase/one-line answer. "descriptive" = long-form written answer.
@@ -703,6 +757,7 @@ Real-world source documents are messy. Handle all of the following without askin
 - IGNORE stray numbers or codes that appear detached from question text with no clear label (e.g. a bare number floating next to or inside a question that isn't part of the question's wording, options, or marks) — these are usually leftover layout artifacts (like a candidate's response-id marker) from the original source and must not be included in the question text or treated as an option.
 - If a question, or any part of it, is built around an image, diagram, table, chart, or geometric figure (e.g. a Venn diagram, graph, circuit diagram, map, or shape pattern), do NOT skip or blank out that part. Describe what's actually drawn in enough concrete visual detail (shapes, counts, positions, labels, arrows, shading, axis values, etc.) that the question remains fully answerable from text alone. Prefix the description with "[Figure] " (e.g. "[Figure] A right triangle with legs 3 cm and 4 cm, right angle at the bottom-left vertex, hypotenuse labeled x") and weave it into the question's "text" field at the point where the figure appears. Still set correctAnswer from any visible answer key. Only fall back to a brief "[Figure: could not be read in enough detail]" note if the image is genuinely illegible (e.g. too low-resolution or cut off) — never silently drop it.
 - Some sources (Word documents in particular) arrive as extracted text PLUS a set of separately-attached embedded images. If the text contains a marker like "[[embedded-image-3]]", it means an image was originally at that exact spot — match it to the 3rd image attachment (attachments are in the same order as their markers) to see what it actually shows, then replace the marker with a "[Figure] ..." description per the rule above.
+- SHOWING THE REAL PICTURE (PDF sources only): when the source you are reading is a paginated PDF (not pasted text, not a Word doc), the app can crop out and display the actual figure pixels to the candidate instead of only your text description — but it needs to know exactly where the figure sits on the page. For every distinct figure a question's stimulus or any of its options visibly depends on: (1) invent a short id unique within that question, e.g. "f1", "f2"; (2) add it to that question's "figures" array as {"id":"f1","page":<1-indexed page number the figure is actually on>,"bbox":[x0,y0,x1,y1]}, where (x0,y0) is the top-left and (x1,y1) the bottom-right corner of a TIGHT box around just the figure itself (not the whole page, not the surrounding paragraph), each number a fraction 0 to 1 of the page's width/height with (0,0) at the page's top-left corner and (1,1) at its bottom-right corner; (3) at the exact spot in the "text" (or that option's string) where the figure belongs, insert the token "[[fig:f1]]" (that figure's own id) — IN ADDITION TO, never instead of, the required "[Figure] ..." description, e.g. "...as shown below [[fig:f1]] [Figure] a right triangle with legs 3 cm and 4 cm...". Only do this for a figure you can actually see as real pixels on that exact page — never guess a page number or box, never do it for a purely re-typed/reconstructed figure, and never do it at all for non-PDF sources. A slightly loose box is fine; a wrong page is not. Questions with no figures simply omit "figures" or set it to null.
 - Multi-page PDFs: question numbering continues across pages/sections seamlessly — do not restart numbering or duplicate a question that spans a page break.`;
 
 // Persists an in-progress extraction (including the source's own base64
@@ -895,15 +950,44 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
           return;
         }
         if (questionNumber !== null) seenQuestionNumbers.add(questionNumber);
+        const qId = uid('q');
+        // The model's figure ids ("f1", "f2"...) only need to be unique
+        // WITHIN one question — across different batches/questions they can
+        // and will collide. Namespace every id by this question's own
+        // internal id so the final paper-wide figures map never clashes,
+        // then rewrite the "[[fig:f1]]" tokens already embedded in text/
+        // options to match. Any marker that doesn't have a matching, valid
+        // figures[] entry is stripped so a stray/malformed token never shows
+        // up as literal text to the candidate.
+        const rawFigures = Array.isArray(q.figures) ? q.figures : [];
+        const figureIdMap = new Map();
+        rawFigures.forEach((f) => {
+          if (!f || typeof f.id !== 'string' || !f.id.trim()) return;
+          if (typeof f.page !== 'number' || !isFinite(f.page) || f.page < 1) return;
+          if (!Array.isArray(f.bbox) || f.bbox.length !== 4 || !f.bbox.every((n) => typeof n === 'number' && isFinite(n))) return;
+          if (figureIdMap.has(f.id)) return;
+          figureIdMap.set(f.id, `${qId}:${f.id}`);
+        });
+        const remapFigureMarkers = (str) => (typeof str === 'string'
+          ? str.replace(/\[\[fig:([^\]]+)]]/g, (m, rid) => (figureIdMap.has(rid) ? `[[fig:${figureIdMap.get(rid)}]]` : ''))
+          : str);
+        const qText = remapFigureMarkers(q.text || '');
+        const qOptions = (type === 'mcq' || type === 'msq') && Array.isArray(q.options)
+          ? q.options.map(remapFigureMarkers)
+          : null;
+        const qFigures = rawFigures
+          .filter((f) => figureIdMap.has(f.id))
+          .map((f) => ({ id: figureIdMap.get(f.id), page: Math.round(f.page), bbox: f.bbox }));
         const newQuestion = {
-          id: uid('q'),
+          id: qId,
           type,
-          text: q.text || '',
-          options: (type === 'mcq' || type === 'msq') && Array.isArray(q.options) ? q.options : null,
+          text: qText,
+          options: qOptions,
           marks: typeof q.marks === 'number' && q.marks > 0 ? q.marks : 1,
           correctAnswer,
           orGroup,
           orGroupChoose,
+          figures: qFigures.length ? qFigures : null,
           // Internal-only, used to restore original document order below —
           // stripped before the paper is returned.
           __qn: questionNumber,
@@ -1402,8 +1486,10 @@ function UploadScreen({ onExtracted }) {
         setStatus('solving');
         const solved = await solveMissingAnswers(paper, (d, total) => { if (!cancelled) setSolveProgress({ done: d, total }); });
         if (cancelled) return;
+        const withFigures = await attachFigureImages(solved, findPdfBytesInContents(saved.contents));
+        if (cancelled) return;
         await clearExtractionProgress();
-        onExtracted(solved);
+        onExtracted(withFigures);
       } catch (e) {
         if (cancelled) return;
         await clearExtractionProgress();
@@ -1537,8 +1623,10 @@ function UploadScreen({ onExtracted }) {
       }
       setStatus('solving');
       const solved = await solveMissingAnswers(paper, (d, total) => setSolveProgress({ done: d, total }));
+      const isPdf = mode === 'file' && file && file.name.toLowerCase().endsWith('.pdf');
+      const withFigures = await attachFigureImages(solved, isPdf ? file : null);
       await clearExtractionProgress();
-      onExtracted(solved);
+      onExtracted(withFigures);
     } catch (e) {
       await clearExtractionProgress();
       setError(e.message || t.errGeneric);
@@ -1897,6 +1985,7 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
                       key={q.id}
                       q={q}
                       index={qIdx}
+                      figures={paper.figures}
                       onChange={(patch) => updateQuestion(sIdx, qIdx, patch)}
                       onRemove={() => removeQuestion(sIdx, qIdx)}
                       selectable={isGrouping}
@@ -1934,7 +2023,7 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
   );
 }
 
-function QuestionEditRow({ q, index, onChange, onRemove, selectable, selected, onToggleSelect }) {
+function QuestionEditRow({ q, index, figures, onChange, onRemove, selectable, selected, onToggleSelect }) {
   const updateOption = (i, val) => {
     const options = (q.options || []).slice();
     options[i] = val;
@@ -1973,6 +2062,20 @@ function QuestionEditRow({ q, index, onChange, onRemove, selectable, selected, o
         <textarea className="mt-textarea flex-1" rows={2} placeholder="Question text" value={q.text} onChange={(e) => onChange({ text: e.target.value })} />
         <button className="mt-btn mt-btn-danger" onClick={onRemove} title="Remove question"><Trash2 size={13} /></button>
       </div>
+      {Array.isArray(q.figures) && q.figures.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2 pl-7">
+          {q.figures.map((f) => {
+            const src = figures && figures[f.id];
+            return src ? (
+              <img key={f.id} src={src} alt="Captured figure" style={{ maxHeight: 90, maxWidth: 160, borderRadius: 6, border: '1px solid var(--rule)' }} />
+            ) : (
+              <span key={f.id} className="text-xs px-2 py-1 rounded" style={{ background: 'var(--brass-soft)', color: 'var(--ink-soft)' }}>
+                Figure could not be captured — its "[Figure] ..." text description is still in the question above
+              </span>
+            );
+          })}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2 mb-2 pl-7">
         <select
           className="mt-select w-auto"
@@ -2735,6 +2838,71 @@ function useIsDesktop() {
   return isDesktop;
 }
 
+// Splits question/option text on "[[fig:ID]]" markers left by extraction,
+// returning an ordered list of plain-text chunks and figure references —
+// this is what lets a marker sitting in the middle of a sentence turn into
+// an actual inline picture instead of literal bracket text.
+function splitFigureMarkers(str) {
+  if (typeof str !== 'string' || !str.includes('[[fig:')) return [{ type: 'text', value: str || '' }];
+  const parts = [];
+  const re = /\[\[fig:([^\]]+)]]/g;
+  let last = 0, m;
+  while ((m = re.exec(str))) {
+    if (m.index > last) parts.push({ type: 'text', value: str.slice(last, m.index) });
+    parts.push({ type: 'figure', id: m[1] });
+    last = re.lastIndex;
+  }
+  if (last < str.length) parts.push({ type: 'text', value: str.slice(last) });
+  return parts;
+}
+
+// A single figure, cropped straight from the source PDF page. Tap/click to
+// see it full-size — small print inside a diagram (axis labels, circuit
+// values) is often unreadable at the compact inline size.
+function FigureImage({ src }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      <img
+        src={src}
+        alt="Figure"
+        onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
+        style={{
+          display: 'block', maxWidth: '100%', maxHeight: 220, borderRadius: 8,
+          border: '1px solid var(--rule)', margin: '0.5rem 0', cursor: 'zoom-in'
+        }}
+      />
+      {expanded && (
+        <div
+          onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(20,17,13,0.86)', zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', cursor: 'zoom-out'
+          }}
+        >
+          <img src={src} alt="Figure enlarged" style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8 }} />
+        </div>
+      )}
+    </>
+  );
+}
+
+// Renders question/option text that may contain "[[fig:ID]]" markers as the
+// real cropped picture inline with the surrounding words, falling back to
+// plain text untouched when there are no markers (the overwhelming majority
+// of questions) or when a marker has no matching rendered image (extraction
+// wasn't a PDF, or that one figure failed to crop) — in which case the
+// marker is simply dropped rather than shown as literal bracket text.
+function FigureText({ text, figures }) {
+  const parts = splitFigureMarkers(text);
+  if (parts.length === 1 && parts[0].type === 'text') return parts[0].value;
+  return parts.map((p, i) => {
+    if (p.type === 'text') return p.value ? <React.Fragment key={i}>{p.value}</React.Fragment> : null;
+    const src = figures && figures[p.id];
+    return src ? <FigureImage key={i} src={src} /> : null;
+  });
+}
+
 function TestScreen({ paper, config, onFinish }) {
   const [state, dispatch] = useReducer(testReducer, undefined, () => {
     // If the app was switched away, backgrounded, or the page got reloaded
@@ -2816,7 +2984,7 @@ function TestScreen({ paper, config, onFinish }) {
     if (state.finished) {
       clearTestProgress();
       exitFullscreen();
-      onFinish(state);
+      onFinish({ ...state, figures: paper.figures || null });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.finished]);
@@ -2945,7 +3113,7 @@ function TestScreen({ paper, config, onFinish }) {
             <div className="flex items-start justify-between gap-3 mb-4">
               <div className="mt-serif text-lg leading-relaxed">
                 <span className="mt-mono text-sm mr-2" style={{ color: 'var(--ink-faint)' }}>Q{state.currentIndex + 1}.</span>
-                {q.text}
+                <FigureText text={q.text} figures={paper.figures} />
               </div>
             </div>
             <div className="text-xs mb-5" style={{ color: 'var(--ink-faint)' }}>
@@ -2963,7 +3131,7 @@ function TestScreen({ paper, config, onFinish }) {
                 {(q.options || []).map((opt, i) => (
                   <div key={i} className={`mt-option-row ${answer === opt ? 'selected' : ''}`} onClick={() => !isLocked && dispatch({ type: 'SELECT_ANSWER', value: opt })}>
                     <div className={`mt-radio ${answer === opt ? 'checked' : ''}`} />
-                    <span className="text-sm">{String.fromCharCode(65 + i)}. {opt}</span>
+                    <span className="text-sm">{String.fromCharCode(65 + i)}. <FigureText text={opt} figures={paper.figures} /></span>
                   </div>
                 ))}
               </div>
@@ -2977,7 +3145,7 @@ function TestScreen({ paper, config, onFinish }) {
                       <div className="mt-radio" style={{ borderRadius: '4px' }}>
                         {selected ? <Check size={11} style={{ color: 'var(--ink)' }} /> : null}
                       </div>
-                      <span className="text-sm">{String.fromCharCode(65 + i)}. {opt}</span>
+                      <span className="text-sm">{String.fromCharCode(65 + i)}. <FigureText text={opt} figures={paper.figures} /></span>
                     </div>
                   );
                 })}
@@ -3475,7 +3643,7 @@ function ResultsScreen({ state, onRestart }) {
                   <div className="text-sm mt-serif">
                     <span className="mt-mono text-xs mr-1.5" style={{ color: 'var(--ink-faint)' }}>Q{idx + 1}.</span>
                     {q.orGroup && <Link2 size={12} className="inline mb-0.5 mr-1" style={{ color: 'var(--brass)' }} />}
-                    {q.text}
+                    <FigureText text={q.text} figures={state.figures} />
                   </div>
                   <span className="text-xs mt-mono flex-shrink-0" style={{ color: 'var(--ink-faint)' }}>{fmtClock(state.timeSpent[q.id] || 0)}</span>
                 </div>
@@ -3486,11 +3654,15 @@ function ResultsScreen({ state, onRestart }) {
                 ) : (
                   <>
                     <div className="text-xs mb-1" style={{ color: 'var(--ink-soft)' }}>
-                      Your answer: <span style={{ color: answered ? (gradable ? (correct ? 'var(--answered)' : 'var(--alert)') : 'var(--ink)') : 'var(--ink-faint)' }}>{ansDisplay || 'Not answered'}</span>
+                      Your answer: <span style={{ color: answered ? (gradable ? (correct ? 'var(--answered)' : 'var(--alert)') : 'var(--ink)') : 'var(--ink-faint)' }}>
+                        {ansDisplay ? <FigureText text={typeof ansDisplay === 'string' ? ansDisplay : String(ansDisplay)} figures={state.figures} /> : 'Not answered'}
+                      </span>
                     </div>
                     {q.correctAnswer && (
                       <div className="text-xs" style={{ color: 'var(--ink-soft)' }}>
-                        {q.type === 'descriptive' ? 'Reference answer' : 'Correct answer'}: <span style={{ color: 'var(--answered)' }}>{correctDisplay}</span>
+                        {q.type === 'descriptive' ? 'Reference answer' : 'Correct answer'}: <span style={{ color: 'var(--answered)' }}>
+                          <FigureText text={typeof correctDisplay === 'string' ? correctDisplay : String(correctDisplay)} figures={state.figures} />
+                        </span>
                       </div>
                     )}
                   </>
