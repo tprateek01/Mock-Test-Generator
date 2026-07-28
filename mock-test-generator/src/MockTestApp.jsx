@@ -3124,7 +3124,7 @@ function TestScreen({ paper, config, onFinish }) {
             })()}
 
             <div className="flex items-start justify-between gap-3 mb-4">
-              <div className="mt-serif text-lg leading-relaxed">
+              <div className="mt-serif text-lg leading-relaxed" style={{ minWidth: 0 }}>
                 <span className="mt-mono text-sm mr-2" style={{ color: 'var(--ink-faint)' }}>Q{state.currentIndex + 1}.</span>
                 <FigureText text={q.text} figures={paper.figures} />
               </div>
@@ -3144,7 +3144,7 @@ function TestScreen({ paper, config, onFinish }) {
                 {(q.options || []).map((opt, i) => (
                   <div key={i} className={`mt-option-row ${answer === opt ? 'selected' : ''}`} onClick={() => !isLocked && dispatch({ type: 'SELECT_ANSWER', value: opt })}>
                     <div className={`mt-radio ${answer === opt ? 'checked' : ''}`} />
-                    <span className="text-sm">{String.fromCharCode(65 + i)}. <FigureText text={opt} figures={paper.figures} /></span>
+                    <span className="text-sm" style={{ minWidth: 0 }}>{String.fromCharCode(65 + i)}. <FigureText text={opt} figures={paper.figures} /></span>
                   </div>
                 ))}
               </div>
@@ -3158,7 +3158,7 @@ function TestScreen({ paper, config, onFinish }) {
                       <div className="mt-radio" style={{ borderRadius: '4px' }}>
                         {selected ? <Check size={11} style={{ color: 'var(--ink)' }} /> : null}
                       </div>
-                      <span className="text-sm">{String.fromCharCode(65 + i)}. <FigureText text={opt} figures={paper.figures} /></span>
+                      <span className="text-sm" style={{ minWidth: 0 }}>{String.fromCharCode(65 + i)}. <FigureText text={opt} figures={paper.figures} /></span>
                     </div>
                   );
                 })}
@@ -3653,7 +3653,7 @@ function ResultsScreen({ state, onRestart }) {
             return (
               <div key={q.id} className="mt-card p-4" style={isSkippedAlternative ? { opacity: 0.7 } : undefined}>
                 <div className="flex items-start justify-between gap-2 mb-1">
-                  <div className="text-sm mt-serif">
+                  <div className="text-sm mt-serif" style={{ minWidth: 0 }}>
                     <span className="mt-mono text-xs mr-1.5" style={{ color: 'var(--ink-faint)' }}>Q{idx + 1}.</span>
                     {q.orGroup && <Link2 size={12} className="inline mb-0.5 mr-1" style={{ color: 'var(--brass)' }} />}
                     <FigureText text={q.text} figures={state.figures} />
