@@ -12,17 +12,38 @@
 // worker script couldn't be fetched), or a page/box turns out to be bad,
 // we quietly skip that figure rather than blowing up the whole extraction —
 // the "[Figure] ..." text description already captured is always there as
-// a fallback.
+// a fallback. "Quietly" only means we don't interrupt the user, though:
+// every failure is still logged to the console (console.warn/error below)
+// so a *systemic* failure (every figure failing, not just one bad box) is
+// actually diagnosable instead of invisible.
 
 let pdfjsLibPromise = null;
 function loadPdfJs() {
   if (!pdfjsLibPromise) {
-    pdfjsLibPromise = import('pdfjs-dist/build/pdf.mjs').then((pdfjsLib) => {
+    pdfjsLibPromise = import('pdfjs-dist/build/pdf.mjs').then(async (pdfjsLib) => {
       // Loaded from a CDN at runtime rather than bundled, so we don't have
       // to fight CRA's webpack config to emit a worker file. Pinned to the
       // exact version installed so it always matches the API in use.
-      pdfjsLib.GlobalWorkerOptions.workerSrc =
-        `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+      const workerUrl = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+      // Some browsers (notably some Android WebViews / in-app browsers, and
+      // certain locked-down mobile setups) refuse to construct a Worker
+      // directly from a cross-origin URL even when the CDN sends correct
+      // CORS headers. Fetching the script ourselves and handing the Worker
+      // constructor a same-origin blob: URL sidesteps that restriction
+      // entirely and is the standard workaround for it.
+      try {
+        const resp = await fetch(workerUrl);
+        if (!resp.ok) throw new Error(`Worker script fetch failed: HTTP ${resp.status}`);
+        const code = await resp.text();
+        const blobUrl = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+        pdfjsLib.GlobalWorkerOptions.workerSrc = blobUrl;
+      } catch (e) {
+        // Blob approach failed (e.g. the fetch itself was blocked) — fall
+        // back to pointing straight at the CDN URL, which still works in
+        // most normal desktop/mobile browsers.
+        console.warn('[pdfFigures] Falling back to direct CDN worker URL — blob fetch failed:', e);
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+      }
       return pdfjsLib;
     });
   }
@@ -88,7 +109,8 @@ function cropCanvas(canvas, bbox) {
 }
 
 // figureRefs: [{ id, page, bbox }]. Returns { [id]: dataUrl } for every
-// figure that could actually be rendered (bad/failed ones are just omitted).
+// figure that could actually be rendered (bad/failed ones are just omitted,
+// but logged — see the note at the top of this file).
 export async function renderFigureImages(fileOrArrayBuffer, figureRefs) {
   const valid = (figureRefs || []).filter(
     (f) => f && f.id && typeof f.page === 'number' && f.page >= 1 &&
@@ -96,7 +118,18 @@ export async function renderFigureImages(fileOrArrayBuffer, figureRefs) {
   );
   if (!valid.length) return {};
 
-  const pdfDoc = await loadPdfDocument(fileOrArrayBuffer);
+  let pdfDoc;
+  try {
+    pdfDoc = await loadPdfDocument(fileOrArrayBuffer);
+  } catch (e) {
+    // This is the failure mode that breaks EVERY figure at once (as opposed
+    // to one bad box) — pdf.js itself couldn't load or couldn't parse the
+    // PDF. Surfacing this loudly is the whole point of the logging added
+    // here: a silent catch here previously made "every image fails" and
+    // "one image fails" look identical from the console.
+    console.error('[pdfFigures] Could not load the PDF for figure cropping — every figure in this document will fall back to its text description:', e);
+    return {};
+  }
   const pageCache = new Map();
   const result = {};
 
@@ -110,8 +143,10 @@ export async function renderFigureImages(fileOrArrayBuffer, figureRefs) {
       }
       const dataUrl = cropCanvas(canvas, fig.bbox);
       if (dataUrl) result[fig.id] = dataUrl;
+      else console.warn(`[pdfFigures] Figure "${fig.id}" (page ${fig.page}) cropped to an empty/invalid region — bbox may be degenerate:`, fig.bbox);
     } catch (e) {
       // Skip this one figure; the text "[Figure] ..." description remains.
+      console.warn(`[pdfFigures] Failed to render figure "${fig.id}" (page ${fig.page}):`, e);
     }
   }
 

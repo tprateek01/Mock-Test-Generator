@@ -665,7 +665,10 @@ async function attachFigureImages(paper, pdfSource) {
       return { ...paper, figures: images };
     }
   } catch (e) {
-    // best-effort only — extraction result is still fully usable without pictures
+    // best-effort only — extraction result is still fully usable without
+    // pictures, but log it so a total failure is diagnosable (renderFigureImages
+    // itself also logs the more specific underlying cause when this fires).
+    console.error('[attachFigureImages] Figure cropping failed entirely for this paper:', e);
   }
   return paper;
 }
