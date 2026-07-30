@@ -39,17 +39,35 @@ function sleep(ms) {
 }
 
 async function callGeminiModel(model, body) {
-  const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': GEMINI_API_KEY
-      },
-      body: JSON.stringify(body)
-    }
-  );
+  // Proactive pacing: if our own count says we've already sent
+  // FREE_TIER_RPM_LIMIT requests to this model in the last 60s, wait for the
+  // oldest one to age out of the window instead of sending and getting a 429
+  // back. This runs BEFORE the actual fetch, on every call — complementing
+  // (not replacing) the reactive modelCooldownUntil check done by the caller.
+  const waitMs = msUntilUnderRateLimit(model);
+  if (waitMs > 0) {
+    console.warn(`${model} at free-tier pace limit — waiting ${Math.round(waitMs / 1000)}s before sending`);
+    await sleep(waitMs);
+  }
+
+  let resp;
+  try {
+    resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': GEMINI_API_KEY
+        },
+        body: JSON.stringify(body)
+      }
+    );
+  } finally {
+    // Record the request as spent regardless of outcome (success or
+    // failure) — it still counted against the free-tier quota either way.
+    (recentRequestTimestamps[model] = recentRequestTimestamps[model] || []).push(Date.now());
+  }
   const data = await resp.json();
   return { ok: resp.ok, status: resp.status, data };
 }
@@ -60,6 +78,30 @@ async function callGeminiModel(model, body) {
 // server process), which is fine: it's just an optimization, not a source
 // of truth, and naturally clears itself on the next deploy/restart.
 const modelCooldownUntil = {};
+
+// Tracks recent request TIMESTAMPS per model (not just a count) so we can
+// do a proper rolling 60-second window: any timestamp older than 60s ago
+// is no longer "in the window" and gets dropped.
+const recentRequestTimestamps = {}; // { [model]: number[] }
+const FREE_TIER_RPM_LIMIT = 20; // Google's free-tier requests-per-minute cap; re-check ai.google.dev/gemini-api/docs/rate-limits if this ever changes
+
+// Given a model name, returns how many milliseconds to wait before it's safe
+// to send another request to that model (0 if it's already safe to send now).
+// This is the PROACTIVE half of rate-limit handling: it slows things down
+// based on our own request count, before Google ever has to tell us we're
+// over the limit with a 429.
+function msUntilUnderRateLimit(model) {
+  const now = Date.now();
+  const windowStart = now - 60000; // 60-second rolling window
+  const timestamps = recentRequestTimestamps[model] || [];
+  // Drop anything older than the window — it no longer counts.
+  const inWindow = timestamps.filter(t => t > windowStart);
+  recentRequestTimestamps[model] = inWindow;
+  if (inWindow.length < FREE_TIER_RPM_LIMIT) return 0;
+  // At the limit — wait until the OLDEST request in the window ages out.
+  const oldest = inWindow[0];
+  return Math.max(0, (oldest + 60000) - now);
+}
 
 // Google's 429 response includes its own recommended wait time (e.g.
 // "Please retry in 26.8s") inside details[].retryDelay ("26s"/"26.8s").

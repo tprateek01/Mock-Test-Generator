@@ -892,10 +892,16 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
 
   const MAX_ITERATIONS = 60;
   const MAX_RECONCILE_ROUNDS = 6;
-  // Large per-call output budget: the old 1000-token cap was the root cause of
-  // both missed questions and mid-passage cutoffs — it forced the model to stop
-  // after just a few questions (or partway through a long passage) every time.
-  const MAX_OUTPUT_TOKENS = 8192;
+  // Large per-call output budget: a small cap is the root cause of both missed
+  // questions and mid-passage cutoffs — it forces the model to stop after just
+  // a few questions (or partway through a long passage) every time, which then
+  // forces MORE batches (i.e. more Gemini API calls) to get through one paper.
+  // Since Google's free tier caps requests at 20/minute per project, fewer
+  // batches per paper directly means fewer 429s. gemini-3.5-flash (the first
+  // model in the server's MODEL_FALLBACKS) currently supports up to 65,536
+  // output tokens — see https://ai.google.dev/gemini-api/docs/models. Set a
+  // bit under that ceiling as a safety margin rather than the exact max.
+  const MAX_OUTPUT_TOKENS = 60000;
 
   const totalSoFar = () => sections.reduce((n, s) => n + s.questions.length, 0);
   // The highest source-numbered question accepted so far, if any — used as
