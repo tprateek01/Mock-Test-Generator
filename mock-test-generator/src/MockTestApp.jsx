@@ -677,6 +677,24 @@ async function attachFigureImages(paper, pdfSource) {
 // In production, set REACT_APP_API_BASE to your deployed backend's URL (see deployment notes).
 const API_BASE = process.env.REACT_APP_API_BASE || '';
 
+// Uploads a source file (PDF/image) to Gemini ONCE via our server's
+// /api/gemini/upload route, returning a small { fileUri, mimeType }
+// reference. Building the extraction's initial message around this instead
+// of an `inlineData` blob means every one of the (possibly dozens of)
+// follow-up generateContent calls in a multi-batch extraction sends just a
+// short URI string, not the full file bytes again — the file itself only
+// ever crosses the wire to Google once.
+async function uploadSourceToGemini(base64, mimeType, displayName) {
+  const resp = await fetch(`${API_BASE}/api/gemini/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data: base64, mimeType, displayName })
+  });
+  if (!resp.ok) throw new Error(`Upload error ${resp.status}`);
+  const info = await resp.json(); // { uri, mimeType, name, expirationTime }
+  return { fileData: { fileUri: info.uri, mimeType: info.mimeType } };
+}
+
 async function callGemini(contents, systemInstruction, maxTokens = 1000) {
   const resp = await fetch(`${API_BASE}/api/gemini`, {
     method: 'POST',
@@ -880,6 +898,27 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
   const MAX_OUTPUT_TOKENS = 8192;
 
   const totalSoFar = () => sections.reduce((n, s) => n + s.questions.length, 0);
+  // The highest source-numbered question accepted so far, if any — used as
+  // an explicit resume anchor (see pinTail below) so the model always knows
+  // exactly where to continue from, even though it no longer has the full
+  // multi-batch conversation to infer that from.
+  const lastQn = () => (seenQuestionNumbers.size ? Math.max(...seenQuestionNumbers) : null);
+  // Keeps `contents` a constant size instead of letting it grow by two
+  // messages every iteration. Gemini has no server-side session, so the
+  // ENTIRE `contents` array gets re-sent on every call — for a long paper
+  // needing dozens of batches, that used to mean re-transmitting every prior
+  // batch's full raw JSON output on every subsequent call, adding up to real
+  // KB/MB of repeated egress well before extraction finished. Only the base
+  // message (the source + original instructions) and the single most recent
+  // exchange are actually needed: the model can always re-read the source
+  // itself for anything it needs (a shared passage, earlier context), and
+  // the continuation instruction now states the exact last question number
+  // accepted so far, so truncating older turns doesn't cost it its place.
+  const pinTail = (base, modelText, userText) => [
+    base[0],
+    { role: 'model', parts: [{ text: modelText }] },
+    { role: 'user', parts: [{ text: userText }] }
+  ];
 
   if (resume && onProgress) onProgress(totalSoFar());
 
@@ -896,7 +935,7 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
     try {
       parsed = parseJsonLoose(raw);
     } catch (e) {
-      contents = [...contents, { role: 'model', parts: [{ text: raw }] }, { role: 'user', parts: [{ text: 'That was not valid JSON (possibly cut off). Resend ONLY valid, complete, minified JSON matching the schema — a smaller batch of questions if needed so the response fits, but every question in it must be complete, including any passage text in full.' }] }];
+      contents = pinTail(contents, raw, 'That was not valid JSON (possibly cut off). Resend ONLY valid, complete, minified JSON matching the schema — a smaller batch of questions if needed so the response fits, but every question in it must be complete, including any passage text in full.');
       continue;
     }
 
@@ -1015,7 +1054,8 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
     if (staleStreak >= 2) break;
 
     if (!parsed.complete) {
-      contents = [...contents, { role: 'model', parts: [{ text: raw }] }, { role: 'user', parts: [{ text: `You have extracted ${afterCount} question(s) so far${expectedTotal ? ` out of an estimated ${expectedTotal}` : ''}. Continue extracting the NEXT batch from exactly where you left off, same JSON schema. Never repeat a question already extracted. If a question shares a passage you already sent in full in a previous response, do not resend that passage text — just continue with the question.` }] }];
+      const anchor = lastQn();
+      contents = pinTail(contents, raw, `You have extracted ${afterCount} question(s) so far${expectedTotal ? ` out of an estimated ${expectedTotal}` : ''}${anchor !== null ? `, the last one being question number ${anchor}` : ''}. Continue extracting the NEXT batch starting immediately after${anchor !== null ? ` question number ${anchor}` : ' the last question you sent'}, same JSON schema. Never repeat a question already extracted. If a question shares a passage from earlier in the source, re-read it directly from the source rather than resending it verbatim — just continue with the question.`);
       continue;
     }
 
@@ -1027,7 +1067,7 @@ async function extractQuestions(sourceParts, onProgress, maxQuestions = null, re
     // intentional in either case.
     if (!cap && !startAtQ && expectedTotal && afterCount < expectedTotal && reconcileRounds < MAX_RECONCILE_ROUNDS) {
       reconcileRounds++;
-      contents = [...contents, { role: 'model', parts: [{ text: raw }] }, { role: 'user', parts: [{ text: `You estimated earlier that this source has about ${expectedTotal} questions, but you have only extracted ${afterCount} so far. Carefully re-scan the ENTIRE source end to end, including any pages, sections, or passage-based question sets you may have skipped, and extract every remaining question you find, same JSON schema. Never repeat a question already extracted. If after a careful re-check there truly are no more questions, set "complete": true again.` }] }];
+      contents = pinTail(contents, raw, `You estimated earlier that this source has about ${expectedTotal} questions, but you have only extracted ${afterCount} so far. Carefully re-scan the ENTIRE source end to end, including any pages, sections, or passage-based question sets you may have skipped, and extract every remaining question you find, same JSON schema. Never repeat a question already extracted. If after a careful re-check there truly are no more questions, set "complete": true again.`);
       continue;
     }
 
@@ -1484,12 +1524,33 @@ function UploadScreen({ onExtracted }) {
     (async () => {
       const saved = await loadExtractionProgress();
       if (cancelled || !saved || !saved.contents) return;
+
+      // Gemini's uploaded-file reference (used inside saved.contents) expires
+      // after ~48h, and realistically nobody wants a stale extraction from
+      // hours ago silently resuming — and resending the growing conversation
+      // history — the moment they happen to reopen the tab. If this was
+      // abandoned a while back, just clear it and let them start fresh
+      // instead of auto-resuming indefinitely.
+      const RESUME_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
+      if (!saved.savedAt || Date.now() - saved.savedAt > RESUME_MAX_AGE_MS) {
+        await clearExtractionProgress();
+        return;
+      }
+
       setStatus('working');
       setProgressCount((saved.sections || []).reduce((n, s) => n + s.questions.length, 0));
       try {
         const paper = await extractQuestions(
           [], (n) => { if (!cancelled) setProgressCount(n); }, saved.cap, saved,
-          (snap) => saveExtractionProgress({ ...snap, sourceSignature: saved.sourceSignature }),
+          (snap) => saveExtractionProgress({
+            ...snap,
+            sourceSignature: saved.sourceSignature,
+            // Carry the locally-kept source bytes forward across every
+            // autosave during the resumed run — these never touch the
+            // network, they're only for figure cropping below.
+            sourceBase64: saved.sourceBase64,
+            sourceMime: saved.sourceMime
+          }),
           saved.startAt
         );
         if (cancelled) return;
@@ -1499,7 +1560,16 @@ function UploadScreen({ onExtracted }) {
         setStatus('solving');
         const solved = await solveMissingAnswers(paper, (d, total) => { if (!cancelled) setSolveProgress({ done: d, total }); });
         if (cancelled) return;
-        const withFigures = await attachFigureImages(solved, findPdfBytesInContents(saved.contents));
+        // Figure cropping needs the actual PDF/image bytes, which are no
+        // longer inside saved.contents (that now only holds a Gemini file
+        // URI reference) — reconstruct them from the copy we kept locally
+        // for exactly this purpose. Falls back to the old extraction path
+        // (reading raw bytes back out of contents) only for sessions saved
+        // before this change.
+        const pdfSource = saved.sourceBase64 && saved.sourceMime === 'application/pdf'
+          ? base64ToArrayBuffer(saved.sourceBase64)
+          : findPdfBytesInContents(saved.contents);
+        const withFigures = await attachFigureImages(solved, pdfSource);
         if (cancelled) return;
         await clearExtractionProgress();
         onExtracted(withFigures);
@@ -1532,6 +1602,8 @@ function UploadScreen({ onExtracted }) {
     const sourceSignature = mode === 'paste' ? `paste:${pastedText.length}` : `file:${file ? `${file.name}:${file.size}` : ''}`;
     try {
       let sourceParts;
+      let sourceBase64ForResume = null;
+      let sourceMimeForResume = null;
       if (mode === 'paste') {
         if (!pastedText.trim()) throw new Error(t.errNoPaste);
         sourceParts = [{ text: pastedText }];
@@ -1574,6 +1646,7 @@ function UploadScreen({ onExtracted }) {
           });
           const images = [];
           let imgIdx = 0;
+          const uploadTasks = []; // collected here, awaited together after convertToHtml finishes
           const html = await mammoth.convertToHtml(
             { arrayBuffer: buf },
             {
@@ -1586,13 +1659,36 @@ function UploadScreen({ onExtracted }) {
                   return { src: '' }; // decorative — drop silently, no marker left in text
                 }
                 imgIdx += 1;
-                images.push({ inlineData: { mimeType, data: b64 } });
+                const idx = imgIdx;
+                // Same fix as the PDF/image sources below: upload the image to
+                // Gemini ONCE here (this callback only runs once per image,
+                // regardless of how many extraction batches follow) so later
+                // continuation turns reference it by a small file URI instead
+                // of re-embedding its full base64 bytes every time. Falls back
+                // to inline bytes if the upload itself fails, so one flaky
+                // upload can't sink the whole extraction.
+                //
+                // Deliberately NOT awaited here — mammoth walks the document
+                // and calls this once per image, so awaiting inline would
+                // upload them one at a time (slow for image-heavy papers).
+                // Instead every upload is kicked off immediately and they all
+                // run concurrently; we only wait for the full batch to finish
+                // once conversion of the whole document is done, below.
+                uploadTasks.push(
+                  uploadSourceToGemini(b64, mimeType, `embedded-image-${idx}`)
+                    .catch((e) => {
+                      console.error(`[docx] Upload failed for embedded image ${idx}, falling back to inline:`, e);
+                      return { inlineData: { mimeType, data: b64 } };
+                    })
+                    .then((part) => { images[idx - 1] = part; })
+                );
                 // Leave a marker in the text flow so the model knows roughly
                 // where each image sits relative to the surrounding text.
-                return { src: '', alt: `[[embedded-image-${imgIdx}]]` };
+                return { src: '', alt: `[[embedded-image-${idx}]]` };
               })
             }
           );
+          await Promise.all(uploadTasks);
           const text = html.value
             .replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, '\n$1\n')
             .replace(/<img[^>]*>/gi, '\n')
@@ -1614,21 +1710,34 @@ function UploadScreen({ onExtracted }) {
             : [{ text }];
         } else if (name.endsWith('.pdf')) {
           const b64 = await fileToBase64(file);
-          sourceParts = [{ inlineData: { mimeType: 'application/pdf', data: b64 } }];
+          sourceBase64ForResume = b64; // kept locally only, for figure cropping / resume — never re-sent
+          sourceMimeForResume = 'application/pdf';
+          sourceParts = [await uploadSourceToGemini(b64, 'application/pdf', file.name)];
         } else if (name.endsWith('.txt')) {
           const text = await file.text();
           sourceParts = [{ text }];
         } else {
           const b64 = await fileToBase64(file);
           const mediaType = file.type || 'image/png';
-          sourceParts = [{ inlineData: { mimeType: mediaType, data: b64 } }];
+          sourceBase64ForResume = b64;
+          sourceMimeForResume = mediaType;
+          sourceParts = [await uploadSourceToGemini(b64, mediaType, file.name)];
         }
       }
       const cap = limitEnabled && Number(questionLimit) > 0 ? Math.floor(Number(questionLimit)) : null;
       const startAt = startFromEnabled && Number(startFromQuestion) > 1 ? Math.floor(Number(startFromQuestion)) : null;
       const paper = await extractQuestions(
         sourceParts, (n) => setProgressCount(n), cap, null,
-        (snap) => saveExtractionProgress({ ...snap, sourceSignature }),
+        (snap) => saveExtractionProgress({
+          ...snap,
+          sourceSignature,
+          // Raw bytes for local figure-cropping/resume only — `snap.contents`
+          // itself now holds a `fileData` URI reference, not the file bytes,
+          // so this is what keeps figure cropping working after a reload
+          // without ever re-uploading the file to Gemini again.
+          sourceBase64: sourceBase64ForResume,
+          sourceMime: sourceMimeForResume
+        }),
         startAt
       );
       if (!paper.sections.length || !paper.sections.some(s => s.questions.length)) {
