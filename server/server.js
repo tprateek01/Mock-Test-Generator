@@ -54,7 +54,29 @@ async function callGeminiModel(model, body) {
   return { ok: resp.ok, status: resp.status, data };
 }
 
-// Uploads raw bytes to Gemini's Files API ONCE, returning a small file URI
+// Tracks, per model, the timestamp before which we already know it's
+// rate-limited — so the NEXT call skips straight past it to a fallback
+// instead of wasting a request finding that out again. In-memory only (per
+// server process), which is fine: it's just an optimization, not a source
+// of truth, and naturally clears itself on the next deploy/restart.
+const modelCooldownUntil = {};
+
+// Google's 429 response includes its own recommended wait time (e.g.
+// "Please retry in 26.8s") inside details[].retryDelay ("26s"/"26.8s").
+// Reading that instead of guessing means the cooldown matches reality —
+// too short and we hammer a still-limited model again; too long and we sit
+// out quota we could've already used again.
+function getRetryDelayMs(errData) {
+  try {
+    const details = (errData && errData.error && errData.error.details) || [];
+    const retryInfo = details.find(d => typeof d['@type'] === 'string' && d['@type'].includes('RetryInfo'));
+    const match = retryInfo && String(retryInfo.retryDelay || '').match(/(\d+(\.\d+)?)s/);
+    if (match) return Math.ceil(parseFloat(match[1]) * 1000);
+  } catch (e) { /* fall through to default below */ }
+  return 30000; // couldn't parse a delay — 30s is a safe, short default
+}
+
+
 // that the frontend can then reference (via a `fileData` part) in every
 // follow-up generateContent call instead of re-embedding the full base64
 // payload each time. A multi-batch extraction can make dozens of calls —
@@ -153,7 +175,16 @@ app.post('/api/gemini', async (req, res) => {
 
     let lastResult = null;
 
-    for (const model of MODEL_FALLBACKS) {
+    // Skip any model still inside its own known 429 cooldown — no point
+    // spending a request re-discovering it's still rate-limited. If EVERY
+    // model happens to be cooling down at once, fall back to trying them
+    // anyway in the original order: a wasted request in that rare case
+    // beats guaranteeing a failure when one might actually have recovered.
+    const now = Date.now();
+    const readyModels = MODEL_FALLBACKS.filter(m => now >= (modelCooldownUntil[m] || 0));
+    const modelsToTry = readyModels.length ? readyModels : MODEL_FALLBACKS;
+
+    for (const model of modelsToTry) {
       // Retry the same model on transient 503s before moving to the next model.
       // A retry has to resend the request — there's no getting around that,
       // a 503 means no response was produced to reuse — but `body` is now
@@ -177,7 +208,14 @@ app.post('/api/gemini', async (req, res) => {
           continue;
         }
 
-        // Non-503 error (e.g. 404 model not found/retired) — stop retrying this model, try the next one.
+        if (lastResult.status === 429) {
+          const delayMs = getRetryDelayMs(lastResult.data);
+          modelCooldownUntil[model] = Date.now() + delayMs;
+          console.warn(`${model} rate-limited (free-tier quota) — cooling down for ${Math.round(delayMs / 1000)}s, moving to next model`);
+          break; // retrying the SAME model would just hit the same 429 again — go straight to the next fallback
+        }
+
+        // Non-503/429 error (e.g. 404 model not found/retired) — stop retrying this model, try the next one.
         console.error(`Gemini API error on ${model}:`, lastResult.data);
         break;
       }
