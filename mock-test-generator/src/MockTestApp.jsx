@@ -3349,8 +3349,8 @@ export default function MockTestApp() {
         {stage === 'results' && finalState && (
           <ResultsScreen state={finalState} onRestart={reset} />
         )}
-        <SiteFooter />
       </main>
+      <SiteFooter />
     </div>
   );
 }

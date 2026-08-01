@@ -606,13 +606,24 @@ export default function GlobalStyles() {
       }
       .mt-feature-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-        gap: 1rem;
-        margin: 2rem 0;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.1rem;
+        margin: 0 0 2.5rem;
+      }
+      @media (max-width: 780px) {
+        .mt-feature-grid { grid-template-columns: repeat(2, 1fr); }
+      }
+      @media (max-width: 480px) {
+        .mt-feature-grid { grid-template-columns: 1fr; }
       }
       .mt-feature-card {
-        padding: 1.1rem 1.2rem;
+        padding: 1.2rem 1.25rem;
         text-align: left;
+        transition: transform 0.12s ease, box-shadow 0.12s ease;
+      }
+      .mt-feature-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(28,37,65,0.08);
       }
       .mt-feature-card .mt-seal { margin-bottom: 0.7rem; }
       .mt-feature-card h3 {
@@ -629,20 +640,34 @@ export default function GlobalStyles() {
       .mt-steps {
         counter-reset: mt-step;
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin: 2rem 0;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1.35rem;
+        margin: 2.75rem 0 3.25rem;
+      }
+      @media (max-width: 900px) {
+        .mt-steps { grid-template-columns: repeat(2, 1fr); }
+      }
+      @media (max-width: 480px) {
+        .mt-steps { grid-template-columns: 1fr; }
       }
       .mt-step {
         position: relative;
-        padding: 1.2rem 1.1rem 1.1rem;
+        padding: 1.5rem 1.15rem 1.2rem;
+        display: flex;
+        flex-direction: column;
+        border-top: 2px solid var(--brass);
+        transition: transform 0.12s ease, box-shadow 0.12s ease;
+      }
+      .mt-step:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(28,37,65,0.08);
       }
       .mt-step::before {
         counter-increment: mt-step;
         content: counter(mt-step);
         position: absolute;
-        top: -0.7rem; left: 1rem;
-        width: 1.6rem; height: 1.6rem;
+        top: -0.8rem; left: 1.1rem;
+        width: 1.7rem; height: 1.7rem;
         border-radius: 999px;
         background: var(--ink);
         color: var(--paper);
@@ -650,8 +675,9 @@ export default function GlobalStyles() {
         font-weight: 700;
         font-size: 0.8rem;
         display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 0 0 3px var(--paper);
       }
-      .mt-step h3 { font-size: 0.92rem; font-weight: 700; margin: 0.3rem 0 0.3rem; }
+      .mt-step h3 { font-size: 0.95rem; font-weight: 700; margin: 0.5rem 0 0.35rem; }
       .mt-step p { font-size: 0.83rem; color: var(--ink-soft); line-height: 1.5; margin: 0; }
 
       .mt-resume-banner {

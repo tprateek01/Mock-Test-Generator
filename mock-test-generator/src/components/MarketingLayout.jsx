@@ -3,10 +3,11 @@
 // Reuses the same .mt-app-shell (100dvh flex column) + .mt-stage-area
 // (the scrollable region below the header) classes the exam-flow screens
 // already use, so behavior is consistent across the whole site: header
-// stays put, page content scrolls, and the footer is a normal last child
-// of the scrollable region — never position:fixed, so it can't fight the
-// on-screen keyboard or mobile viewport-resize quirks the way the old
-// per-screen "fixed bottom-0" footers did.
+// and footer are fixed flex-shrink:0 siblings that stay put, and only
+// the content in between (.mt-stage-area) scrolls. This is deliberately
+// NOT position:fixed — a flex sibling with flex-shrink:0 pins it at the
+// bottom without fighting the on-screen keyboard or mobile viewport-resize
+// quirks the way "fixed bottom-0" footers do.
 import React from 'react';
 import SiteHeader from './SiteHeader';
 import SiteFooter from './SiteFooter';
@@ -17,8 +18,8 @@ export default function MarketingLayout({ children }) {
       <SiteHeader showNav />
       <main className="mt-stage-area">
         {children}
-        <SiteFooter />
       </main>
+      <SiteFooter />
     </div>
   );
 }
