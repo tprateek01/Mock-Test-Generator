@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.mocksy_app.twa",
+      "sha256_cert_fingerprints": [
+        "FE:D6:C2:0B:E0:41:CF:CE:7E:E9:9E:36:DA:66:67:C1:17:67:5E:A6:64:51:DE:79:E4:DE:7C:C1:B1:1A:28:CD"
+      ]
+    }
+  }
+]

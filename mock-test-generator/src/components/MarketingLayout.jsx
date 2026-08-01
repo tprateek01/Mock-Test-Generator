@@ -15,7 +15,7 @@ import SiteFooter from './SiteFooter';
 export default function MarketingLayout({ children }) {
   return (
     <div className="mt-app-shell">
-      <SiteHeader showNav />
+      <SiteHeader showNav showInstall />
       <main className="mt-stage-area">
         {children}
       </main>
