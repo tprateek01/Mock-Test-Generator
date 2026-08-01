@@ -501,6 +501,7 @@ export default function GlobalStyles() {
         .mt-calc-fab { width: 2.1rem; height: 2.1rem; }
         .mt-calc-panel { right: -0.85rem; width: 250px; }
         .mt-calc-btn.fn { font-size: 0.6rem; }
+      }
 
       /* --------------------------------------------------------
          SITE CHROME — nav links in the header, and the marketing

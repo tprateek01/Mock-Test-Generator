@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { renderFigureImages } from './pdfFigures';
 import SiteHeader from './components/SiteHeader';
+import SiteFooter from './components/SiteFooter';
 import { saveTestProgress, loadTestProgress, clearTestProgress } from './testProgress';
 
 /* ------------------------------------------------------------
@@ -3331,7 +3332,7 @@ export default function MockTestApp() {
 
   return (
     <div className="mt-app-shell">
-      <SiteHeader showInstall={stage === 'upload'} showNav={false} />
+      <SiteHeader showInstall={stage === 'upload'} showNav />
       <main className="mt-stage-area">
         {stage === 'upload' && (
           <UploadScreen onExtracted={(p) => { setPaper(p); setStage('review'); }} />
@@ -3348,6 +3349,7 @@ export default function MockTestApp() {
         {stage === 'results' && finalState && (
           <ResultsScreen state={finalState} onRestart={reset} />
         )}
+        <SiteFooter />
       </main>
     </div>
   );
