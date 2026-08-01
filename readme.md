@@ -1,78 +1,70 @@
-# Mocksy — Mock Test Generator
+# Getting Started with Create React App
 
-Turn any question paper — a PDF, a Word doc, an image, or pasted text — into a timed, proctored mock test you can take right in the browser.
+This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
-Upload a paper, review the questions Mocksy extracts, configure timing and negative marking, sit the test with a live palette and optional calculator, and get a scored results screen at the end.
+## Available Scripts
 
-## How it works
+In the project directory, you can run:
 
-The repo has two parts:
+### `npm start`
 
-```
-Mock-Test-Generator-main/
-├── mock-test-generator/   React frontend (Create React App)
-└── server/                Express backend — proxies requests to Google's Gemini API
-```
+Runs the app in the development mode.\
+Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
 
-- **Frontend** (`mock-test-generator/`) — the whole app UI: upload screen, review/edit screen, configure screen, the timed test itself, and the results screen with a score breakdown.
-- **Backend** (`server/`) — a small Express server that keeps your Gemini API key secret and forwards question-extraction requests from the frontend to Google's Gemini API.
+The page will reload when you make changes.\
+You may also see any lint errors in the console.
 
-## Features
+### `npm test`
 
-- Extract questions from PDF, Word (`.docx`), images, or pasted text using Gemini
-- Review and edit extracted questions and sections before starting
-- Configure total time, per-section or per-question timing, and negative marking
-- Take the test with a question palette, flagging, and an optional in-test calculator
-- Auto-scored results with a breakdown chart
+Launches the test runner in the interactive watch mode.\
+See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
 
-## Getting started
+### `npm run build`
 
-### 1. Backend
+Builds the app for production to the `build` folder.\
+It correctly bundles React in production mode and optimizes the build for the best performance.
 
-```bash
-cd server
-npm install
-```
+The build is minified and the filenames include the hashes.\
+Your app is ready to be deployed!
 
-Create a `.env` file in `server/` with your Gemini API key:
+See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
 
-```
-GEMINI_API_KEY=your_key_here
-PORT=3001
-```
+### `npm run eject`
 
-Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — no credit card needed.
+**Note: this is a one-way operation. Once you `eject`, you can't go back!**
 
-Start the server:
+If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
 
-```bash
-node server.js
-```
+Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
 
-### 2. Frontend
+You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
 
-```bash
-cd mock-test-generator
-npm install
-npm start
-```
+## Learn More
 
-Open [http://localhost:3000](http://localhost:3000). In development the frontend proxies API requests to `http://localhost:3001` automatically (see `src/setupProxy.js`).
+You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
 
-### Deploying
+To learn React, check out the [React documentation](https://reactjs.org/).
 
-The frontend and backend are meant to be deployed separately (e.g. frontend on Vercel, backend on Render/Railway). Once the backend is deployed, set `REACT_APP_API_BASE` when building the frontend to point at its URL:
+### Code Splitting
 
-```
-REACT_APP_API_BASE=https://your-backend-url.example.com
-```
+This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
 
-## Tech stack
+### Analyzing the Bundle Size
 
-- React (Create React App), Tailwind CSS
-- Express backend proxy to Google Gemini
-- `mammoth` for `.docx` text extraction, `recharts` for the results chart
+This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
 
-## License
+### Making a Progressive Web App
 
-MIT — see [LICENSE](./LICENSE).
+This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+
+### Advanced Configuration
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+
+### Deployment
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+
+### `npm run build` fails to minify
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)

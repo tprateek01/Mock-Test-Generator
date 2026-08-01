@@ -6,7 +6,10 @@ Mocksy extracts questions from an uploaded paper using AI, lets you review and e
 
 ## Main pages
 
-- [Home / Upload a question paper](https://mocksy-app.vercel.app/): Start here — upload a PDF, Word doc, image, or pasted text to generate a mock test.
+- [Home](https://mocksy-app.vercel.app/): Explains what Mocksy is and how it works, with a link into the tool.
+- [Create a mock test](https://mocksy-app.vercel.app/create): The tool itself — upload a PDF, Word doc, image, or pasted text to generate and take a mock test.
+- [Privacy Policy](https://mocksy-app.vercel.app/privacy): What happens to an uploaded paper (sent to Google's Gemini API for question extraction) and what stays local to your browser (test progress, extraction cache).
+- [Contact Us](https://mocksy-app.vercel.app/contact): How to reach the maintainer or report an issue.
 
 ## Docs
 

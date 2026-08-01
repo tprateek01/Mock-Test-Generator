@@ -4,9 +4,11 @@ import {
   ChevronLeft, ChevronRight, AlertTriangle, X, Plus, Trash2, Pencil,
   Play, RotateCcw, Loader2, ListChecks, Timer,
   BarChart3, Layers, ArrowRight, Check, Calculator, Delete,
-  Download, Share, SquarePlus, FileDown, Languages, Link2, Unlink, Shuffle
+  FileDown, Languages, Link2, Unlink, Shuffle
 } from 'lucide-react';
 import { renderFigureImages } from './pdfFigures';
+import SiteHeader from './components/SiteHeader';
+import { saveTestProgress, loadTestProgress, clearTestProgress } from './testProgress';
 
 /* ------------------------------------------------------------
    HOME PAGE LANGUAGE STRINGS — English / Hindi toggle for the
@@ -71,507 +73,6 @@ const HOME_STRINGS = {
 // Results screen) — loading them lazily keeps them out of the initial bundle
 // every visitor downloads on first paint.
 const ResultsChart = lazy(() => import('./ResultsChart'));
-
-/* ============================================================
-   GLOBAL STYLE — "Hall Ticket" design language
-   Paper ivory background, exam-ink navy, brass seal accent,
-   mono digits for the clock, serif for headers.
-   ============================================================ */
-function GlobalStyles() {
-  return (
-    <style>{`
-      /* Fonts are preloaded in public/index.html's <head> instead of via @import
-         here — an @import inside a JS-injected <style> tag can't start
-         downloading until the whole JS bundle has loaded/parsed/executed,
-         which was blocking first paint and hurting mobile Performance. */
-
-      .mt-root {
-        --paper: #FBF8F1;
-        --paper-dim: #F2EDE1;
-        --ink: #1C2541;
-        --ink-soft: #4C567A;
-        --ink-faint: #5B6488;
-        --rule: #DCD5C2;
-        --brass: #A9822F;
-        --brass-soft: #E8DCB8;
-        --alert: #B23A2E;
-        --alert-soft: #F4DEDA;
-        --answered: #2F6F4E;
-        --answered-soft: #DCEBE1;
-        --review: #6E4C9E;
-        --review-soft: #E7DEF3;
-        background: var(--paper);
-        color: var(--ink);
-        font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
-        min-height: 100%;
-        width: 100%;
-      }
-      .mt-serif { font-family: 'Source Serif 4', Georgia, serif; }
-      .mt-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
-
-      .mt-card {
-        background: #fff;
-        border: 1px solid var(--rule);
-        border-radius: 3px;
-        box-shadow: 0 1px 0 rgba(28,37,65,0.03);
-      }
-      .mt-hairline { border-color: var(--rule); }
-
-      .mt-btn {
-        font-family: 'IBM Plex Sans', sans-serif;
-        font-weight: 600;
-        font-size: 0.875rem;
-        border-radius: 3px;
-        padding: 0.6rem 1.1rem;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.45rem;
-        transition: filter 0.12s ease, transform 0.05s ease;
-        cursor: pointer;
-        border: 1px solid transparent;
-      }
-      .mt-btn:active { transform: translateY(1px); }
-      .mt-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-      .mt-btn-primary { background: var(--ink); color: var(--paper); }
-      .mt-btn-primary:hover:not(:disabled) { filter: brightness(1.15); }
-      .mt-btn-brass { background: var(--brass); color: #fff; }
-      .mt-btn-brass:hover:not(:disabled) { filter: brightness(1.08); }
-      .mt-btn-ghost { background: transparent; color: var(--ink); border-color: var(--rule); }
-      .mt-btn-ghost:hover:not(:disabled) { background: var(--paper-dim); }
-      .mt-btn-danger { background: transparent; color: var(--alert); border-color: var(--alert-soft); }
-      .mt-btn-danger:hover:not(:disabled) { background: var(--alert-soft); }
-      .mt-btn-review { background: var(--review); color: #fff; }
-      .mt-btn-review:hover:not(:disabled) { filter: brightness(1.1); }
-      .mt-btn-outline-accent { background: #fff; color: var(--review); border-color: var(--review); }
-      .mt-btn-outline-accent:hover:not(:disabled) { background: var(--review-soft); }
-      .mt-btn-outline-accent:disabled { background: #fff; }
-
-      .mt-input, .mt-textarea, .mt-select {
-        font-family: 'IBM Plex Sans', sans-serif;
-        background: #fff;
-        border: 1px solid var(--rule);
-        border-radius: 3px;
-        padding: 0.55rem 0.7rem;
-        font-size: 0.9rem;
-        color: var(--ink);
-        width: 100%;
-      }
-      .mt-input:focus, .mt-textarea:focus, .mt-select:focus {
-        outline: 2px solid var(--brass);
-        outline-offset: 1px;
-        border-color: var(--brass);
-      }
-
-      .mt-label {
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--ink-soft);
-        font-weight: 600;
-      }
-
-      .mt-seal {
-        width: 2.6rem; height: 2.6rem;
-        border-radius: 999px;
-        border: 1.5px solid var(--brass);
-        display: flex; align-items: center; justify-content: center;
-        color: var(--brass);
-        position: relative;
-        flex-shrink: 0;
-      }
-      .mt-seal::after {
-        content: '';
-        position: absolute; inset: 3px;
-        border-radius: 999px;
-        border: 1px dashed var(--brass);
-        opacity: 0.5;
-      }
-
-      /* OMR-style bubble palette buttons */
-      .mt-bubble {
-        width: 2.5rem; height: 2.5rem;
-        border-radius: 999px;
-        display: flex; align-items: center; justify-content: center;
-        font-family: 'IBM Plex Mono', monospace;
-        font-weight: 600;
-        font-size: 0.85rem;
-        border: 1.5px solid var(--rule);
-        color: var(--ink-soft);
-        background: #fff;
-        cursor: pointer;
-        transition: transform 0.08s ease;
-        position: relative;
-      }
-      .mt-bubble:hover { transform: scale(1.06); }
-      .mt-bubble.current { outline: 2px solid var(--ink); outline-offset: 2px; }
-      .mt-bubble.not-visited { background: #fff; border-color: var(--rule); color: var(--ink-faint); }
-      .mt-bubble.not-answered { background: var(--alert-soft); border-color: var(--alert); color: var(--alert); }
-      .mt-bubble.answered { background: var(--answered); border-color: var(--answered); color: #fff; }
-      .mt-bubble.marked { background: var(--review); border-color: var(--review); color: #fff; }
-      .mt-bubble.answered-marked { background: var(--review); border-color: var(--review); color: #fff; }
-      .mt-bubble.answered-marked::after {
-        content: '';
-        position: absolute; bottom: 2px; right: 2px;
-        width: 7px; height: 7px; border-radius: 999px;
-        background: var(--answered);
-        border: 1.5px solid #fff;
-      }
-      .mt-bubble.locked { opacity: 0.35; cursor: not-allowed; }
-      .mt-bubble.or-group::before {
-        content: '';
-        position: absolute; top: 2px; left: 2px;
-        width: 7px; height: 7px; border-radius: 999px;
-        background: var(--brass);
-        border: 1.5px solid #fff;
-      }
-
-      .mt-flip {
-        font-family: 'IBM Plex Mono', monospace;
-        font-weight: 700;
-        letter-spacing: 0.02em;
-        font-variant-numeric: tabular-nums;
-      }
-
-      @keyframes mt-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
-      .mt-pulse { animation: mt-pulse 1s ease-in-out infinite; }
-
-      .mt-lang-toggle {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
-        font-family: 'IBM Plex Sans', sans-serif;
-        font-size: 0.78rem;
-        font-weight: 600;
-        color: var(--ink-soft);
-        background: #fff;
-        border: 1px solid var(--rule);
-        border-radius: 999px;
-        padding: 0.4rem 0.75rem;
-        cursor: pointer;
-        transition: filter 0.12s ease, transform 0.05s ease;
-        flex-shrink: 0;
-      }
-      .mt-lang-toggle:hover { background: var(--paper-dim); }
-      .mt-lang-toggle:active { transform: translateY(1px); }
-      .mt-lang-toggle span { opacity: 0.45; }
-      .mt-lang-toggle span.mt-lang-active { opacity: 1; color: var(--ink); }
-      .mt-lang-toggle .mt-lang-sep { opacity: 0.3; }
-
-      .mt-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
-      .mt-scrollbar::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 999px; }
-      .mt-scrollbar::-webkit-scrollbar-track { background: transparent; }
-
-      .mt-fade-in { animation: mt-fade-in 0.25s ease both; }
-      @keyframes mt-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-
-      .mt-radio {
-        width: 1.1rem; height: 1.1rem;
-        border-radius: 999px;
-        border: 1.5px solid var(--rule);
-        flex-shrink: 0;
-        display: flex; align-items: center; justify-content: center;
-      }
-      .mt-radio.checked { border-color: var(--ink); }
-      .mt-radio.checked::after {
-        content: ''; width: 0.55rem; height: 0.55rem; border-radius: 999px; background: var(--ink);
-      }
-
-      .mt-option-row {
-        border: 1px solid var(--rule);
-        border-radius: 3px;
-        padding: 0.65rem 0.8rem;
-        display: flex; align-items: flex-start; gap: 0.7rem;
-        cursor: pointer;
-        transition: border-color 0.1s ease, background 0.1s ease;
-      }
-      .mt-option-row:hover { border-color: var(--ink-faint); }
-      .mt-option-row.selected { border-color: var(--ink); background: var(--paper-dim); }
-
-      /* Locks a screen to the height of its container (the app shell's
-         content area, below the site header) so header/footer stay put
-         and only the inner content region scrolls. */
-      .mt-viewport-fixed {
-        height: 100%;
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-      }
-
-      /* Top-level app shell: site header + scrollable/fixed stage area */
-      .mt-app-shell {
-        height: 100vh;
-        height: 100dvh;
-        display: flex;
-        flex-direction: column;
-      }
-      .mt-site-header {
-        flex-shrink: 0;
-        height: 4.75rem;
-        display: flex;
-        align-items: center;
-        gap: 0.9rem;
-        padding: 0 1.25rem;
-        background: var(--paper);
-        border-bottom: 1px solid var(--rule);
-      }
-      .mt-site-header img {
-        height: 3.6rem;
-        width: 3.6rem;
-        object-fit: cover;
-        border-radius: 50%;
-        flex-shrink: 0;
-        border: 2px solid var(--brass);
-        box-shadow: 0 2px 6px rgba(28,37,65,0.15);
-      }
-      .mt-brand-name {
-        font-family: 'Pacifico', cursive;
-        font-weight: 400;
-        font-size: 2rem;
-        line-height: 1.4;
-        padding-bottom: 0.15em;
-        overflow: visible;
-        background: linear-gradient(90deg, var(--ink) 0%, var(--brass) 100%);
-        -webkit-background-clip: text;
-        background-clip: text;
-        -webkit-text-fill-color: transparent;
-        display: inline-block;
-      }
-      .mt-brand-tag {
-        font-family: 'IBM Plex Sans', sans-serif;
-        font-size: 0.68rem;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        color: var(--ink-soft);
-        font-weight: 600;
-        margin-top: 0.1rem;
-      }
-      .mt-stage-area {
-        flex: 1 1 auto;
-        min-height: 0;
-        overflow-y: auto;
-      }
-
-      /* Install-app button, shown in the header on the home screen */
-      .mt-install-btn {
-        margin-left: auto;
-        flex-shrink: 0;
-        white-space: nowrap;
-      }
-      .mt-install-btn span.mt-install-btn-label {
-        display: inline;
-      }
-      @media (max-width: 520px) {
-        .mt-install-btn { padding: 0.55rem 0.7rem; }
-        .mt-install-btn span.mt-install-btn-label { display: none; }
-      }
-
-      .mt-ios-help-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(28,37,65,0.45);
-        display: flex;
-        align-items: flex-end;
-        justify-content: center;
-        z-index: 60;
-        padding: 1rem;
-        animation: mt-fade-in 0.15s ease both;
-      }
-      @media (min-width: 640px) {
-        .mt-ios-help-overlay { align-items: center; }
-      }
-      .mt-ios-help-card {
-        background: var(--paper);
-        border: 1px solid var(--rule);
-        border-radius: 10px;
-        max-width: 26rem;
-        width: 100%;
-        padding: 1.25rem 1.35rem 1.5rem;
-        box-shadow: 0 12px 32px rgba(28,37,65,0.25);
-      }
-      .mt-ios-help-title {
-        font-family: 'Source Serif 4', Georgia, serif;
-        font-weight: 700;
-        font-size: 1.15rem;
-        color: var(--ink);
-        margin-bottom: 0.15rem;
-      }
-      .mt-ios-help-sub {
-        font-size: 0.82rem;
-        color: var(--ink-soft);
-        margin-bottom: 1rem;
-      }
-      .mt-ios-help-steps {
-        list-style: none;
-        margin: 0 0 1.25rem;
-        padding: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 0.7rem;
-      }
-      .mt-ios-help-steps li {
-        display: flex;
-        align-items: flex-start;
-        gap: 0.65rem;
-        font-size: 0.88rem;
-        color: var(--ink);
-        line-height: 1.4;
-      }
-      .mt-ios-help-steps .mt-ios-help-icon {
-        flex-shrink: 0;
-        width: 1.9rem;
-        height: 1.9rem;
-        border-radius: 999px;
-        background: var(--brass-soft);
-        color: var(--brass);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      /* Virtual calculator — header launcher + dropdown popover, available
-         during the test only when the candidate opted in beforehand. Sits
-         inline in the header, just before the time-left clock. */
-      .mt-calc-wrap {
-        position: relative;
-        display: flex;
-        align-items: center;
-        flex-shrink: 0;
-      }
-      .mt-calc-fab {
-        position: static;
-        width: 2.3rem;
-        height: 2.3rem;
-        border-radius: 999px;
-        background: var(--ink);
-        color: var(--paper);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 4px 12px rgba(28,37,65,0.25);
-        border: none;
-        cursor: pointer;
-        z-index: 60;
-        transition: transform 0.12s ease, filter 0.12s ease;
-      }
-      .mt-calc-fab:hover { filter: brightness(1.2); }
-      .mt-calc-fab:active { transform: scale(0.94); }
-      .mt-calc-fab.open { background: var(--brass); }
-      .mt-calc-fab:disabled { opacity: 0.45; cursor: not-allowed; }
-
-      .mt-calc-panel {
-        position: absolute;
-        top: calc(100% + 0.6rem);
-        right: 0;
-        width: 292px;
-        max-width: calc(100vw - 2rem);
-        background: #fff;
-        border: 1px solid var(--rule);
-        border-radius: 8px;
-        box-shadow: 0 14px 34px rgba(28,37,65,0.28);
-        z-index: 60;
-        overflow: hidden;
-      }
-      .mt-calc-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0.6rem 0.8rem;
-        background: var(--paper-dim);
-        border-bottom: 1px solid var(--rule);
-      }
-      .mt-calc-title {
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-weight: 600;
-        color: var(--ink-soft);
-        display: flex;
-        align-items: center;
-        gap: 0.4rem;
-      }
-      .mt-calc-close {
-        background: none;
-        border: none;
-        cursor: pointer;
-        color: var(--ink-soft);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0.15rem;
-      }
-      .mt-calc-close:hover { color: var(--alert); }
-      .mt-calc-display {
-        margin: 0.7rem 0.8rem 0.2rem;
-        background: var(--paper);
-        border: 1px solid var(--rule);
-        border-radius: 6px;
-        padding: 0.6rem 0.7rem;
-        text-align: right;
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 1.35rem;
-        font-weight: 600;
-        color: var(--ink);
-        overflow-x: auto;
-        white-space: nowrap;
-      }
-      .mt-calc-body { padding: 0.7rem 0.8rem 0.85rem; }
-      .mt-calc-row {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 0.4rem;
-        margin-bottom: 0.4rem;
-      }
-      .mt-calc-row:last-child { margin-bottom: 0; }
-      .mt-calc-btn {
-        border: 1px solid var(--rule);
-        border-radius: 6px;
-        background: #fff;
-        color: var(--ink);
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 0.95rem;
-        font-weight: 600;
-        height: 2.3rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: transform 0.06s ease, filter 0.1s ease;
-      }
-      .mt-calc-btn:hover { filter: brightness(0.97); background: var(--paper-dim); }
-      .mt-calc-btn:active { transform: translateY(1px); }
-      .mt-calc-btn.op { color: var(--brass); border-color: var(--brass-soft); background: var(--brass-soft); }
-      .mt-calc-btn.op:hover { filter: brightness(1.05); }
-      .mt-calc-btn.clear { color: var(--alert); }
-      .mt-calc-btn.equals { background: var(--ink); color: var(--paper); border-color: var(--ink); grid-column: span 2; }
-      .mt-calc-btn.equals:hover { filter: brightness(1.2); }
-      .mt-calc-btn.zero { grid-column: span 2; }
-      .mt-calc-btn.fn {
-        font-size: 0.68rem;
-        font-weight: 600;
-        color: var(--ink-soft);
-        background: var(--paper-dim);
-        letter-spacing: 0.01em;
-      }
-      .mt-calc-btn.fn:hover { color: var(--ink); filter: brightness(0.97); }
-      .mt-calc-divider {
-        height: 1px;
-        background: var(--rule);
-        margin: 0 0 0.5rem;
-      }
-
-      @media (max-width: 480px) {
-        .mt-btn { padding: 0.55rem 0.7rem; font-size: 0.8rem; gap: 0.3rem; }
-        .mt-bubble { width: 2.1rem; height: 2.1rem; font-size: 0.75rem; }
-        .mt-site-header { height: 4.4rem; padding: 0 0.85rem; gap: 0.6rem; }
-        .mt-site-header img { height: 2.8rem; width: 2.8rem; }
-        .mt-brand-name { font-size: 1.55rem; }
-        .mt-calc-fab { width: 2.1rem; height: 2.1rem; }
-        .mt-calc-panel { right: -0.85rem; width: 250px; }
-        .mt-calc-btn.fn { font-size: 0.6rem; }
-      }
-    `}</style>
-  );
-}
 
 /* ============================================================
    HELPERS
@@ -2018,8 +1519,9 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
   };
 
   return (
-    <div className="min-h-full p-6 md:p-10 flex justify-center">
-      <div className="w-full max-w-3xl mt-fade-in pb-24">
+    <div className="mt-viewport-fixed">
+      <div className="flex-1 min-h-0 overflow-y-auto mt-scrollbar p-6 md:p-10 flex justify-center">
+      <div className="w-full max-w-3xl mt-fade-in">
         <div className="mb-6">
           <div className="mt-label mb-1">Paper title</div>
           <input className="mt-input mt-serif text-lg font-semibold" value={paper.title} onChange={(e) => updateTitle(e.target.value)} />
@@ -2134,17 +1636,18 @@ function ReviewScreen({ paper, setPaper, onBack, onContinue }) {
         <button className="mt-btn mt-btn-ghost mt-4" onClick={addSection}>
           <Plus size={14} /> Add section
         </button>
+      </div>
+      </div>
 
-        <div
-          className="fixed bottom-0 left-0 right-0 border-t mt-hairline p-4 flex items-center justify-between"
-          style={{ background: 'var(--paper)', zIndex: 20, paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
-        >
-          <div className="max-w-3xl w-full mx-auto flex items-center justify-between">
-            <button className="mt-btn mt-btn-ghost" onClick={onBack}><ChevronLeft size={15} /> Back</button>
-            <button className="mt-btn mt-btn-brass" disabled={totalQ === 0} onClick={onContinue}>
-              Set up timing <ArrowRight size={15} />
-            </button>
-          </div>
+      <div
+        className="border-t mt-hairline p-4 flex-shrink-0"
+        style={{ background: 'var(--paper)', paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
+      >
+        <div className="max-w-3xl w-full mx-auto flex items-center justify-between">
+          <button className="mt-btn mt-btn-ghost" onClick={onBack}><ChevronLeft size={15} /> Back</button>
+          <button className="mt-btn mt-btn-brass" disabled={totalQ === 0} onClick={onContinue}>
+            Set up timing <ArrowRight size={15} />
+          </button>
         </div>
       </div>
     </div>
@@ -2315,8 +1818,9 @@ function ConfigureScreen({ paper, onBack, onStart }) {
   const sectionSum = paper.sections.reduce((n, s) => n + (sectionMinutes[s.id] || 0), 0);
 
   return (
-    <div className="min-h-full p-6 md:p-10 flex justify-center">
-      <div className="w-full max-w-2xl mt-fade-in pb-24">
+    <div className="mt-viewport-fixed">
+      <div className="flex-1 min-h-0 overflow-y-auto mt-scrollbar p-6 md:p-10 flex justify-center">
+      <div className="w-full max-w-2xl mt-fade-in">
         <div className="flex items-center gap-3 mb-8">
           <div className="mt-seal"><Timer size={18} /></div>
           <div>
@@ -2436,25 +1940,26 @@ function ConfigureScreen({ paper, onBack, onStart }) {
             </span>
           </label>
         </div>
+      </div>
+      </div>
 
-        <div
-          className="fixed bottom-0 left-0 right-0 border-t mt-hairline p-4"
-          style={{ background: 'var(--paper)', zIndex: 20, paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
-        >
-          <div className="max-w-2xl w-full mx-auto flex items-center justify-between">
-            <button className="mt-btn mt-btn-ghost" onClick={onBack}><ChevronLeft size={15} /> Back</button>
-            <button
-              className="mt-btn mt-btn-brass"
-              onClick={() => {
-                enterFullscreen();
-                onStart({
-                  totalMinutes, useSectionTiming, sectionMinutes, useQuestionTiming, questionSeconds, negativeMarking, calculatorEnabled
-                });
-              }}
-            >
-              <Play size={15} /> Begin mock test
-            </button>
-          </div>
+      <div
+        className="border-t mt-hairline p-4 flex-shrink-0"
+        style={{ background: 'var(--paper)', paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
+      >
+        <div className="max-w-2xl w-full mx-auto flex items-center justify-between">
+          <button className="mt-btn mt-btn-ghost" onClick={onBack}><ChevronLeft size={15} /> Back</button>
+          <button
+            className="mt-btn mt-btn-brass"
+            onClick={() => {
+              enterFullscreen();
+              onStart({
+                totalMinutes, useSectionTiming, sectionMinutes, useQuestionTiming, questionSeconds, negativeMarking, calculatorEnabled
+              });
+            }}
+          >
+            <Play size={15} /> Begin mock test
+          </button>
         </div>
       </div>
     </div>
@@ -2532,21 +2037,9 @@ function enforceGroupLimit(state, q) {
 // test — the attempt can be transparently resumed exactly where it left off
 // instead of being lost. Best-effort: storage errors (private mode, full
 // quota, etc.) are swallowed since autosave should never crash the test.
-const TEST_PROGRESS_KEY = 'mocksy_test_progress_v1';
-function saveTestProgress(paper, config, state) {
-  try {
-    localStorage.setItem(TEST_PROGRESS_KEY, JSON.stringify({ paper, config, state, savedAt: Date.now() }));
-  } catch (e) { /* ignore — autosave is best-effort */ }
-}
-function loadTestProgress() {
-  try {
-    const raw = localStorage.getItem(TEST_PROGRESS_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) { return null; }
-}
-function clearTestProgress() {
-  try { localStorage.removeItem(TEST_PROGRESS_KEY); } catch (e) { /* ignore */ }
-}
+// (saveTestProgress/loadTestProgress/clearTestProgress now live in
+// ./testProgress.js so HomePage can reuse the resumable-test check without
+// bundling this entire file — see the import at the top.)
 
 function initTestState(paper, config) {
   const flatQuestions = buildFlatQuestions(paper);
@@ -3823,120 +3316,6 @@ function StatCard({ label, value, color }) {
 }
 
 /* ============================================================
-   SITE HEADER — logo + brand name, shown on every screen
-   ============================================================ */
-/* ------------------------------------------------------------
-   INSTALL APP — turns the site into a real, icon-on-home-screen,
-   full-screen, offline-capable app via the PWA install flow.
-   Chrome/Edge/Android fire `beforeinstallprompt`, which we capture
-   and trigger from our own button. iOS Safari doesn't support that
-   event at all, so there we show short "Add to Home Screen" steps
-   instead — that's the only way to install a PWA on iOS.
-   ------------------------------------------------------------ */
-function useInstallPrompt() {
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [isStandalone, setIsStandalone] = useState(false);
-
-  useEffect(() => {
-    const standaloneMedia = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
-    const iosStandalone = window.navigator.standalone === true;
-    setIsStandalone(!!(standaloneMedia || iosStandalone));
-
-    const onBeforeInstall = (e) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    const onInstalled = () => {
-      setDeferredPrompt(null);
-      setIsStandalone(true);
-    };
-
-    window.addEventListener('beforeinstallprompt', onBeforeInstall);
-    window.addEventListener('appinstalled', onInstalled);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
-      window.removeEventListener('appinstalled', onInstalled);
-    };
-  }, []);
-
-  return { deferredPrompt, isStandalone, clearPrompt: () => setDeferredPrompt(null) };
-}
-
-function InstallAppButton() {
-  const { deferredPrompt, isStandalone, clearPrompt } = useInstallPrompt();
-  const [showIosHelp, setShowIosHelp] = useState(false);
-
-  const ua = window.navigator.userAgent || '';
-  const isIos = /iphone|ipad|ipod/i.test(ua) && !window.MSStream;
-
-  // Already installed — nothing to offer.
-  if (isStandalone) return null;
-  // Not iOS and the browser hasn't (or won't) fire beforeinstallprompt
-  // (e.g. desktop Firefox, or it just hasn't fired yet) — hide rather
-  // than show a button that does nothing.
-  if (!isIos && !deferredPrompt) return null;
-
-  const handleClick = async () => {
-    if (isIos) {
-      setShowIosHelp(true);
-      return;
-    }
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
-    clearPrompt();
-  };
-
-  return (
-    <>
-      <button type="button" className="mt-btn mt-btn-brass mt-install-btn" onClick={handleClick}>
-        <Download size={16} />
-        <span className="mt-install-btn-label">Download App</span>
-      </button>
-
-      {showIosHelp && (
-        <div className="mt-ios-help-overlay" onClick={() => setShowIosHelp(false)}>
-          <div className="mt-ios-help-card" onClick={(e) => e.stopPropagation()}>
-            <div className="mt-ios-help-title">Install Mocksy on your device</div>
-            <div className="mt-ios-help-sub">Adds an app icon to your Home Screen — opens full-screen, no browser bar.</div>
-            <ol className="mt-ios-help-steps">
-              <li>
-                <span className="mt-ios-help-icon"><Share size={16} /></span>
-                <span>Tap the <strong>Share</strong> icon in Safari's toolbar.</span>
-              </li>
-              <li>
-                <span className="mt-ios-help-icon"><SquarePlus size={16} /></span>
-                <span>Scroll down and tap <strong>Add to Home Screen</strong>.</span>
-              </li>
-              <li>
-                <span className="mt-ios-help-icon"><Check size={16} /></span>
-                <span>Tap <strong>Add</strong> — Mocksy now opens like any other app.</span>
-              </li>
-            </ol>
-            <button type="button" className="mt-btn mt-btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setShowIosHelp(false)}>
-              Got it
-            </button>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-function SiteHeader({ showInstall }) {
-  return (
-    <header className="mt-site-header">
-      <img src={`${process.env.PUBLIC_URL}/mocksy-logo.jpg`} alt="Mocksy logo" />
-      <div>
-        <div className="mt-brand-name">Mocksy</div>
-        <div className="mt-brand-tag">Mock Test Generator</div>
-      </div>
-      {showInstall && <InstallAppButton />}
-    </header>
-  );
-}
-
-/* ============================================================
    ROOT APP — exported as MockTestApp
    ============================================================ */
 export default function MockTestApp() {
@@ -3951,9 +3330,8 @@ export default function MockTestApp() {
   const reset = () => { clearTestProgress(); setStage('upload'); setPaper(null); setConfig(null); setFinalState(null); };
 
   return (
-    <div className="mt-root mt-app-shell">
-      <GlobalStyles />
-      <SiteHeader showInstall={stage === 'upload'} />
+    <div className="mt-app-shell">
+      <SiteHeader showInstall={stage === 'upload'} showNav={false} />
       <main className="mt-stage-area">
         {stage === 'upload' && (
           <UploadScreen onExtracted={(p) => { setPaper(p); setStage('review'); }} />
