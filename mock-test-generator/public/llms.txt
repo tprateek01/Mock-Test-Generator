@@ -6,7 +6,7 @@ Mocksy extracts questions from an uploaded paper using AI, lets you review and e
 
 ## Main pages
 
-- [Home / Upload a question paper](https://mock-test-live.vercel.app/): Start here — upload a PDF, Word doc, image, or pasted text to generate a mock test.
+- [Home / Upload a question paper](https://mocksy-app.vercel.app/): Start here — upload a PDF, Word doc, image, or pasted text to generate a mock test.
 
 ## Docs
 
