@@ -998,7 +998,7 @@ function NumField({ value, onCommit, min, max, step, integer = true, className =
   );
 }
 
-function UploadScreen({ onExtracted }) {
+function UploadScreen({ onExtracted, onStatusChange }) {
   const [mode, setMode] = useState('file'); // 'file' | 'paste'
   const [pastedText, setPastedText] = useState('');
   const [file, setFile] = useState(null);
@@ -1008,6 +1008,11 @@ function UploadScreen({ onExtracted }) {
   const [solveProgress, setSolveProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState('');
   const inputRef = useRef(null);
+  // Let the parent (MockTestApp) know whenever our status changes, so it
+  // can hide the site nav/footer while a paper is actively being read
+  // (working/solving) without touching the idle drop-zone screen, which
+  // keeps the full marketing-style chrome like Home/Contact/Privacy do.
+  useEffect(() => { onStatusChange && onStatusChange(status); }, [status, onStatusChange]);
   // Home-page-only display language. Purely cosmetic — doesn't touch
   // extraction, review, timing, or test-taking, all of which stay English.
   const [lang, setLang] = useState('en'); // 'en' | 'hi'
@@ -3327,15 +3332,25 @@ export default function MockTestApp() {
   const [paper, setPaper] = useState(hasResumable ? savedProgressRef.current.paper : null);
   const [config, setConfig] = useState(hasResumable ? savedProgressRef.current.config : null);
   const [finalState, setFinalState] = useState(null);
+  // Tracks UploadScreen's own idle/working/solving/error status so we can
+  // tell "sitting on the empty drop-zone" apart from "actively fetching/
+  // reading a paper" — both happen while stage === 'upload'.
+  const [uploadStatus, setUploadStatus] = useState('idle');
 
   const reset = () => { clearTestProgress(); setStage('upload'); setPaper(null); setConfig(null); setFinalState(null); };
 
+  // Full site chrome (nav links + footer) only on the idle upload screen —
+  // the same treatment as Home/Contact/Privacy. Everything else in the
+  // exam flow (fetching/reading, review, configure, test, results) gets
+  // just the bare logo header and no footer, so it stays distraction-free.
+  const showChrome = stage === 'upload' && (uploadStatus === 'idle' || uploadStatus === 'error');
+
   return (
     <div className="mt-app-shell">
-      <SiteHeader showInstall={stage === 'upload'} showNav />
+      <SiteHeader showInstall={showChrome} showNav={showChrome} />
       <main className="mt-stage-area">
         {stage === 'upload' && (
-          <UploadScreen onExtracted={(p) => { setPaper(p); setStage('review'); }} />
+          <UploadScreen onExtracted={(p) => { setPaper(p); setStage('review'); }} onStatusChange={setUploadStatus} />
         )}
         {stage === 'review' && paper && (
           <ReviewScreen paper={paper} setPaper={setPaper} onBack={() => setStage('upload')} onContinue={() => setStage('configure')} />
@@ -3350,7 +3365,7 @@ export default function MockTestApp() {
           <ResultsScreen state={finalState} onRestart={reset} />
         )}
       </main>
-      <SiteFooter />
+      {showChrome && <SiteFooter />}
     </div>
   );
 }

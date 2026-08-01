@@ -727,9 +727,25 @@ export default function GlobalStyles() {
       .mt-contact-card a:hover { text-decoration: underline; }
 
       @media (max-width: 640px) {
-        .mt-site-nav { gap: 0.85rem; }
-        .mt-site-nav a { font-size: 0.78rem; }
-        .mt-site-footer-inner { flex-direction: column; align-items: flex-start; }
+        .mt-site-header {
+          flex-wrap: wrap;
+          height: auto;
+          padding: 0.65rem 0.85rem;
+          row-gap: 0.5rem;
+        }
+        .mt-site-header > a { flex-shrink: 0; }
+        .mt-site-nav {
+          flex-basis: 100%;
+          margin-left: 0;
+          flex-wrap: wrap;
+          gap: 0.7rem 1rem;
+        }
+        .mt-site-nav a { font-size: 0.78rem; padding: 0.1rem 0; }
+        .mt-site-footer { padding: 0.9rem 1rem calc(0.9rem + env(safe-area-inset-bottom, 0px)); }
+        .mt-site-footer-inner { flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+        .mt-site-footer-links { gap: 0.6rem 0.9rem; }
+        .mt-site-footer a { font-size: 0.78rem; }
+        .mt-site-footer-copy { font-size: 0.72rem; }
       }
     `}</style>
   );
