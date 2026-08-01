@@ -7,7 +7,7 @@ import React from 'react';
 import { Mail, Code2, MessageCircleQuestion } from 'lucide-react';
 import MarketingLayout from '../components/MarketingLayout';
 
-const CONTACT_EMAIL = 'prateekmrj08@gmail.com'; // TODO: replace with your real contact email
+const CONTACT_EMAIL = 'admin.mocksy@gmail.com'; // TODO: replace with your real contact email
 const GITHUB_REPO = 'https://github.com/tprateek01/Mock-Test-Generator';
 
 export default function ContactUs() {
