@@ -1,0 +1,5 @@
+{
+  "published": false,
+  "version": "0.0.0",
+  "note": "Set published to true and update version once the real mocksy.apk (built via PWABuilder/Bubblewrap) is placed in this folder. See public/downloads/README.md."
+}

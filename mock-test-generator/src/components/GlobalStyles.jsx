@@ -284,9 +284,23 @@ export default function GlobalStyles() {
         overflow-y: auto;
       }
 
+      /* Right-hand cluster in the header: language toggle + (optionally)
+         the install-app button. This wrapper carries the margin-left:auto
+         that pushes the cluster to the right, so it works whether one or
+         both of its children are present. */
+      .mt-header-actions {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        flex-shrink: 0;
+      }
+      @media (max-width: 520px) {
+        .mt-header-actions { gap: 0.4rem; }
+      }
+
       /* Install-app button, shown in the header on the home screen */
       .mt-install-btn {
-        margin-left: auto;
         flex-shrink: 0;
         white-space: nowrap;
       }

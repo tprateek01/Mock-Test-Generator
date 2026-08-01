@@ -4,12 +4,13 @@ import {
   ChevronLeft, ChevronRight, AlertTriangle, X, Plus, Trash2, Pencil,
   Play, RotateCcw, Loader2, ListChecks, Timer,
   BarChart3, Layers, ArrowRight, Check, Calculator, Delete,
-  FileDown, Languages, Link2, Unlink, Shuffle
+  FileDown, Link2, Unlink, Shuffle
 } from 'lucide-react';
 import { renderFigureImages } from './pdfFigures';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
 import { saveTestProgress, loadTestProgress, clearTestProgress } from './testProgress';
+import { useLanguage } from './i18n/LanguageContext';
 
 /* ------------------------------------------------------------
    HOME PAGE LANGUAGE STRINGS — English / Hindi toggle for the
@@ -1013,9 +1014,11 @@ function UploadScreen({ onExtracted, onStatusChange }) {
   // (working/solving) without touching the idle drop-zone screen, which
   // keeps the full marketing-style chrome like Home/Contact/Privacy do.
   useEffect(() => { onStatusChange && onStatusChange(status); }, [status, onStatusChange]);
-  // Home-page-only display language. Purely cosmetic — doesn't touch
-  // extraction, review, timing, or test-taking, all of which stay English.
-  const [lang, setLang] = useState('en'); // 'en' | 'hi'
+  // Display language for this screen's copy — now shared site-wide via
+  // LanguageContext (the toggle itself lives in SiteHeader, at the top of
+  // every page) instead of being local state here. Still purely cosmetic:
+  // doesn't touch extraction, review, timing, or test-taking logic.
+  const { lang } = useLanguage();
   const t = HOME_STRINGS[lang];
   // Optional cap so someone with a huge source paper (or who just wants a
   // quick practice run) can pull only the first N questions instead of the
@@ -1312,18 +1315,6 @@ function UploadScreen({ onExtracted, onStatusChange }) {
               <div className="text-sm" style={{ color: 'var(--ink-soft)' }}>{t.subtitle}</div>
             </div>
           </div>
-          <button
-            type="button"
-            className="mt-lang-toggle"
-            onClick={() => setLang(lang === 'en' ? 'hi' : 'en')}
-            aria-label="Switch language / भाषा बदलें"
-            title="Switch language / भाषा बदलें"
-          >
-            <Languages size={13} />
-            <span className={lang === 'en' ? 'mt-lang-active' : ''}>EN</span>
-            <span className="mt-lang-sep">/</span>
-            <span className={lang === 'hi' ? 'mt-lang-active' : ''}>हिं</span>
-          </button>
         </div>
 
         <div className="flex gap-2 mb-4">
