@@ -1,4 +1,17 @@
 {
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "mock-test-live.vercel.app"
+        }
+      ],
+      "destination": "https://mocksy-app.vercel.app/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     { "source": "/((?!static/|.*\\.).*)", "destination": "/index.html" }
   ],
