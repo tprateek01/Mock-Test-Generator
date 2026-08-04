@@ -550,10 +550,11 @@ export default function GlobalStyles() {
         max-width: 64rem;
         margin: 0 auto;
         display: flex;
-        flex-wrap: wrap;
+        flex-direction: column;
         align-items: center;
-        justify-content: space-between;
-        gap: 0.75rem;
+        justify-content: center;
+        gap: 0.4rem;
+        text-align: center;
       }
       .mt-site-footer a {
         font-size: 0.82rem;
@@ -562,7 +563,15 @@ export default function GlobalStyles() {
       }
       .mt-site-footer a:hover { color: var(--ink); text-decoration: underline; }
       .mt-site-footer-copy { font-size: 0.78rem; color: var(--ink-faint); }
-      .mt-site-footer-credit { font-size: 0.78rem; color: var(--ink-faint); }
+      .mt-site-footer-credit {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        font-size: 0.78rem;
+        color: var(--ink-faint);
+      }
       .mt-site-footer-person {
         display: inline-flex;
         align-items: center;
@@ -763,7 +772,7 @@ export default function GlobalStyles() {
         }
         .mt-site-nav a { font-size: 0.78rem; padding: 0.1rem 0; }
         .mt-site-footer { padding: 0.9rem 1rem calc(0.9rem + env(safe-area-inset-bottom, 0px)); }
-        .mt-site-footer-inner { flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+        .mt-site-footer-inner { gap: 0.5rem; }
         .mt-site-footer a { font-size: 0.78rem; }
         .mt-site-footer-copy { font-size: 0.72rem; }
         .mt-site-footer-credit { font-size: 0.72rem; }
