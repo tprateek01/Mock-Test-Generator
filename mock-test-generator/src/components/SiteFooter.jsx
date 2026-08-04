@@ -31,8 +31,8 @@ export default function SiteFooter() {
     <footer className="mt-site-footer">
       <div className="mt-site-footer-inner">
         <span className="mt-site-footer-copy">{t.copy(new Date().getFullYear())}</span>
-        <span className="mt-site-footer-credit">
-          {t.builtBy}{' '}
+        <div className="mt-site-footer-credit">
+          <span className="mt-site-footer-credit-label">Built by</span>
           <span className="mt-site-footer-person">
             Prateek Tripathi
             <a href="https://github.com/tprateek01" target="_blank" rel="noopener noreferrer" aria-label="Prateek Tripathi on GitHub">
@@ -42,7 +42,6 @@ export default function SiteFooter() {
               <LinkedinIcon />
             </a>
           </span>
-          {' & '}
           <span className="mt-site-footer-person">
             Anmol Pandey
             <a href="https://github.com/AnmolPandey9119" target="_blank" rel="noopener noreferrer" aria-label="Anmol Pandey on GitHub">
@@ -52,7 +51,7 @@ export default function SiteFooter() {
               <LinkedinIcon />
             </a>
           </span>
-        </span>
+        </div>
       </div>
     </footer>
   );

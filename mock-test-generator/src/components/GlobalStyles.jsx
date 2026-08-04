@@ -565,17 +565,20 @@ export default function GlobalStyles() {
       .mt-site-footer-copy { font-size: 0.78rem; color: var(--ink-faint); }
       .mt-site-footer-credit {
         display: flex;
-        flex-wrap: wrap;
+        flex-direction: column;
         align-items: center;
-        justify-content: center;
-        gap: 0.35rem;
-        font-size: 0.78rem;
+        gap: 0.25rem;
+      }
+      .mt-site-footer-credit-label {
+        font-size: 0.72rem;
         color: var(--ink-faint);
       }
       .mt-site-footer-person {
         display: inline-flex;
         align-items: center;
-        gap: 0.3rem;
+        gap: 0.35rem;
+        font-size: 0.78rem;
+        color: var(--ink-faint);
       }
       .mt-site-footer-person a {
         display: inline-flex;
