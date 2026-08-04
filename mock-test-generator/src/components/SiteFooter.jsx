@@ -32,7 +32,6 @@ export default function SiteFooter() {
       <div className="mt-site-footer-inner">
         <span className="mt-site-footer-copy">{t.copy(new Date().getFullYear())}</span>
         <div className="mt-site-footer-credit">
-          <span className="mt-site-footer-credit-label">Built by</span>
           <span className="mt-site-footer-person">
             Prateek Tripathi
             <a href="https://github.com/tprateek01" target="_blank" rel="noopener noreferrer" aria-label="Prateek Tripathi on GitHub">

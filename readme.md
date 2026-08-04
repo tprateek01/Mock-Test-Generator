@@ -1,70 +1,111 @@
-# Getting Started with Create React App
+# Mocksy — Mock Test Generator
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Mocksy turns any question paper — a PDF, a Word doc, a photo of a printed sheet, or plain pasted text — into a timed, proctored, auto-graded mock test you can take right in your browser. It's built for students prepping for competitive exams (GATE, SSC, UPSC, banking, and similar) who want to practice under real exam conditions instead of just reading through a paper.
 
-## Available Scripts
+**Live app:** https://mocksy-app.vercel.app
 
-In the project directory, you can run:
+## How it works
 
-### `npm start`
+1. **Upload** — Drop in a PDF, `.docx`, an image of a printed paper, or paste the raw text of a question paper. You can also start from a blank test.
+2. **Review** — Mocksy (via Google's Gemini API) extracts the questions and sections automatically. Nothing starts until you've reviewed and corrected the extraction, so mistakes never slip into your test.
+3. **Configure** — Set total-test, per-section, or per-question timing, and negative marking (including GATE-style fractional marking) to match the real exam.
+4. **Take it** — Sit the test with a live question palette, an optional in-test scientific calculator, and a locked, distraction-free layout.
+5. **Get scored** — Get an instant score breakdown and results chart the moment you submit.
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## Features
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+- **Any source format** — PDF, Word (`.docx`), a photo of a printed paper, or text pasted directly.
+- **Editable extraction** — You always get to check and fix the extracted questions before the test begins.
+- **Flexible timing** — Total-test, per-section, or per-question timers.
+- **Negative marking** — Configurable per question type.
+- **Optional calculator** — An in-test scientific calculator you can enable when the exam allows it.
+- **Bilingual** — The entire site, including the upload flow, is available in Hindi and English.
+- **Installable PWA** — Installable as an app on desktop and mobile, with offline-friendly caching.
+- **Downloadable results** — Export your test and score as a PDF via `jsPDF`.
 
-### `npm test`
+## Tech stack
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+**Frontend** (`mock-test-generator/`)
+- React 19 + React Router
+- Tailwind CSS
+- Recharts (results charts), jsPDF (PDF export), Mammoth (`.docx` parsing), PDF.js (PDF parsing)
+- Configured as a PWA (service worker + install prompt)
 
-### `npm run build`
+**Backend** (`server/`)
+- A minimal Node.js + Express proxy that keeps the Gemini API key secret and forwards question-extraction requests from the frontend to Google's Gemini API, with automatic model fallback and free-tier rate-limit handling.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Project structure
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+```
+Mock-Test-Generator/
+├── mock-test-generator/   # React frontend (the app itself)
+│   ├── src/
+│   │   ├── components/    # Header, footer, layout, shared UI
+│   │   ├── pages/         # Home, Privacy Policy, Contact Us
+│   │   ├── i18n/          # English/Hindi strings
+│   │   └── MockTestApp.jsx  # Upload → Review → Configure → Take → Results flow
+│   └── public/
+└── server/                 # Express proxy for the Gemini API
+    └── server.js
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Getting started locally
 
-### `npm run eject`
+### 1. Frontend
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+```bash
+cd mock-test-generator
+npm install
+npm start
+```
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+Runs the app at [http://localhost:3000](http://localhost:3000).
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+### 2. Backend (Gemini proxy)
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+The question-extraction step calls Google's Gemini API through a small backend, so your API key never reaches the browser.
 
-## Learn More
+```bash
+cd server
+npm install
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+Create a `.env` file inside `server/`:
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+```
+GEMINI_API_KEY=your_key_here
+PORT=3001
+```
 
-### Code Splitting
+Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (no credit card needed), then run:
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+```bash
+node server.js
+```
 
-### Analyzing the Bundle Size
+### Available frontend scripts
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+Run these from inside `mock-test-generator/`:
 
-### Making a Progressive Web App
+- `npm start` — Runs the app in development mode.
+- `npm test` — Launches the test runner in interactive watch mode.
+- `npm run build` — Builds an optimized production bundle to `build/`.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+## Deployment
 
-### Advanced Configuration
+The frontend is deployed on [Vercel](https://vercel.com); see `mock-test-generator/vercel.json` for routing and caching rules. Set `GEMINI_API_KEY` (and `ALLOWED_ORIGIN`, pointed at your deployed frontend URL) as environment variables wherever you host `server/`.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+## Team
 
-### Deployment
+Built by:
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+- **Prateek Tripathi** — [GitHub](https://github.com/tprateek01) · [LinkedIn](https://www.linkedin.com/in/prateek-tripathi-3a100a252/)
+- **Anmol Pandey** — [GitHub](https://github.com/AnmolPandey9119) · [LinkedIn](https://www.linkedin.com/in/anmol-pandey-240105376/)
 
-### `npm run build` fails to minify
+## Contributing / feedback
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+Found a bug or have a feature idea? Open an issue on [GitHub Issues](https://github.com/tprateek01/Mock-Test-Generator/issues).
+
+## License
+
+Licensed under the [MIT License](LICENSE).

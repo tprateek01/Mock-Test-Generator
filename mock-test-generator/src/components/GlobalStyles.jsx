@@ -544,7 +544,7 @@ export default function GlobalStyles() {
         flex-shrink: 0;
         border-top: 1px solid var(--rule);
         background: var(--paper-dim);
-        padding: 1.1rem 1.25rem calc(1.1rem + env(safe-area-inset-bottom, 0px));
+        padding: 0.7rem 1.25rem calc(0.7rem + env(safe-area-inset-bottom, 0px));
       }
       .mt-site-footer-inner {
         max-width: 64rem;
@@ -553,7 +553,7 @@ export default function GlobalStyles() {
         flex-wrap: wrap;
         align-items: center;
         justify-content: space-between;
-        gap: 0.75rem;
+        gap: 0.5rem;
       }
       .mt-site-footer a {
         font-size: 0.82rem;
@@ -561,26 +561,27 @@ export default function GlobalStyles() {
         text-decoration: none;
       }
       .mt-site-footer a:hover { color: var(--ink); text-decoration: underline; }
-      .mt-site-footer-copy { font-size: 0.78rem; color: var(--ink-faint); }
+      .mt-site-footer-copy { font-size: 0.75rem; line-height: 1.3; color: var(--ink-faint); }
       .mt-site-footer-credit {
         display: flex;
         flex-direction: column;
         align-items: flex-end;
-        gap: 0.2rem;
+        gap: 0.05rem;
       }
       .mt-site-footer-credit-label {
-        font-size: 0.78rem;
+        font-size: 0.75rem;
         color: var(--ink-faint);
       }
       .mt-site-footer-credit-sep {
-        font-size: 0.78rem;
+        font-size: 0.75rem;
         color: var(--ink-faint);
       }
       .mt-site-footer-person {
         display: inline-flex;
         align-items: center;
-        gap: 0.3rem;
-        font-size: 0.78rem;
+        gap: 0.25rem;
+        font-size: 0.75rem;
+        line-height: 1.3;
         color: var(--ink-faint);
       }
       .mt-site-footer-person a {
@@ -589,6 +590,7 @@ export default function GlobalStyles() {
         color: var(--ink-soft);
       }
       .mt-site-footer-person a:hover { color: var(--ink); }
+      .mt-site-footer-person svg { width: 12px; height: 12px; }
 
       /* --------------------------------------------------------
          MARKETING PAGES — Home, Privacy Policy, Contact Us.
@@ -777,12 +779,12 @@ export default function GlobalStyles() {
           gap: 0.7rem 1rem;
         }
         .mt-site-nav a { font-size: 0.78rem; padding: 0.1rem 0; }
-        .mt-site-footer { padding: 0.9rem 1rem calc(0.9rem + env(safe-area-inset-bottom, 0px)); }
-        .mt-site-footer-inner { gap: 0.5rem; }
+        .mt-site-footer { padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom, 0px)); }
+        .mt-site-footer-inner { gap: 0.4rem; }
         .mt-site-footer a { font-size: 0.78rem; }
-        .mt-site-footer-copy { font-size: 0.72rem; }
-        .mt-site-footer-credit-label { font-size: 0.72rem; }
-        .mt-site-footer-person { font-size: 0.72rem; }
+        .mt-site-footer-copy { font-size: 0.68rem; }
+        .mt-site-footer-credit-label { font-size: 0.68rem; }
+        .mt-site-footer-person { font-size: 0.68rem; }
       }
     `}</style>
   );
