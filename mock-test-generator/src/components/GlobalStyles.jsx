@@ -564,10 +564,9 @@ export default function GlobalStyles() {
       .mt-site-footer-copy { font-size: 0.78rem; color: var(--ink-faint); }
       .mt-site-footer-credit {
         display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 0.5rem;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.2rem;
       }
       .mt-site-footer-credit-label {
         font-size: 0.78rem;
