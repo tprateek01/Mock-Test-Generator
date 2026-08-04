@@ -550,11 +550,10 @@ export default function GlobalStyles() {
         max-width: 64rem;
         margin: 0 auto;
         display: flex;
-        flex-direction: column;
+        flex-wrap: wrap;
         align-items: center;
-        justify-content: center;
-        gap: 0.4rem;
-        text-align: center;
+        justify-content: space-between;
+        gap: 0.75rem;
       }
       .mt-site-footer a {
         font-size: 0.82rem;
@@ -565,18 +564,23 @@ export default function GlobalStyles() {
       .mt-site-footer-copy { font-size: 0.78rem; color: var(--ink-faint); }
       .mt-site-footer-credit {
         display: flex;
-        flex-direction: column;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 0.25rem;
+        justify-content: flex-end;
+        gap: 0.5rem;
       }
       .mt-site-footer-credit-label {
-        font-size: 0.72rem;
+        font-size: 0.78rem;
+        color: var(--ink-faint);
+      }
+      .mt-site-footer-credit-sep {
+        font-size: 0.78rem;
         color: var(--ink-faint);
       }
       .mt-site-footer-person {
         display: inline-flex;
         align-items: center;
-        gap: 0.35rem;
+        gap: 0.3rem;
         font-size: 0.78rem;
         color: var(--ink-faint);
       }
@@ -778,7 +782,8 @@ export default function GlobalStyles() {
         .mt-site-footer-inner { gap: 0.5rem; }
         .mt-site-footer a { font-size: 0.78rem; }
         .mt-site-footer-copy { font-size: 0.72rem; }
-        .mt-site-footer-credit { font-size: 0.72rem; }
+        .mt-site-footer-credit-label { font-size: 0.72rem; }
+        .mt-site-footer-person { font-size: 0.72rem; }
       }
     `}</style>
   );

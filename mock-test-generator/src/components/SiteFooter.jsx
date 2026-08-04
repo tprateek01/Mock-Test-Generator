@@ -42,6 +42,7 @@ export default function SiteFooter() {
               <LinkedinIcon />
             </a>
           </span>
+          <span className="mt-site-footer-credit-sep">&amp;</span>
           <span className="mt-site-footer-person">
             Anmol Pandey
             <a href="https://github.com/AnmolPandey9119" target="_blank" rel="noopener noreferrer" aria-label="Anmol Pandey on GitHub">
