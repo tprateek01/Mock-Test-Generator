@@ -555,11 +555,6 @@ export default function GlobalStyles() {
         justify-content: space-between;
         gap: 0.75rem;
       }
-      .mt-site-footer-links {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 1.1rem;
-      }
       .mt-site-footer a {
         font-size: 0.82rem;
         color: var(--ink-soft);
@@ -567,6 +562,18 @@ export default function GlobalStyles() {
       }
       .mt-site-footer a:hover { color: var(--ink); text-decoration: underline; }
       .mt-site-footer-copy { font-size: 0.78rem; color: var(--ink-faint); }
+      .mt-site-footer-credit { font-size: 0.78rem; color: var(--ink-faint); }
+      .mt-site-footer-person {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+      }
+      .mt-site-footer-person a {
+        display: inline-flex;
+        align-items: center;
+        color: var(--ink-soft);
+      }
+      .mt-site-footer-person a:hover { color: var(--ink); }
 
       /* --------------------------------------------------------
          MARKETING PAGES — Home, Privacy Policy, Contact Us.
@@ -757,9 +764,9 @@ export default function GlobalStyles() {
         .mt-site-nav a { font-size: 0.78rem; padding: 0.1rem 0; }
         .mt-site-footer { padding: 0.9rem 1rem calc(0.9rem + env(safe-area-inset-bottom, 0px)); }
         .mt-site-footer-inner { flex-direction: column; align-items: flex-start; gap: 0.6rem; }
-        .mt-site-footer-links { gap: 0.6rem 0.9rem; }
         .mt-site-footer a { font-size: 0.78rem; }
         .mt-site-footer-copy { font-size: 0.72rem; }
+        .mt-site-footer-credit { font-size: 0.72rem; }
       }
     `}</style>
   );
