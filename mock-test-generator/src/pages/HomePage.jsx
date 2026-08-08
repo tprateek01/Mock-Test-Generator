@@ -21,7 +21,14 @@ export default function HomePage() {
   const t = HOME_PAGE_STRINGS[lang];
 
   return (
-    <MarketingLayout>
+    <MarketingLayout
+      seo={{
+        path: '/',
+        title: 'Mocksy – Free Mock Test Generator | Turn Any Question Paper Into a Timed Test',
+        description:
+          'Mocksy is a free online mock test generator. Upload any question paper (PDF, Word, image, or pasted text) and instantly get a timed, proctored, auto-graded mock test — perfect for GATE, SSC, UPSC, banking, and other competitive exam prep.',
+      }}
+    >
       <div className="mt-marketing-page mt-marketing-wide">
         {resumable && (
           <div className="mt-resume-banner">

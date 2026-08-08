@@ -34,38 +34,31 @@
     </noscript>
 
     <!-- Primary SEO tags -->
-    <title>Mocksy – Free Mock Test Generator | Turn Any Question Paper Into a Timed Test</title>
-    <meta
-      name="description"
-      content="Mocksy is a free online mock test generator. Upload any question paper (PDF, Word, image, or pasted text) and instantly get a timed, proctored, auto-graded mock test — perfect for GATE, SSC, UPSC, banking, and other competitive exam prep."
-    />
+    <!--
+      title / description / canonical / og:url / og:title / og:description /
+      twitter:url / twitter:title / twitter:description are intentionally
+      NOT hard-coded here anymore. This file is served as-is for every route
+      (see vercel.json rewrites), so a static canonical/title here was
+      forcing every page — /contact, /create, /privacy — to declare the
+      homepage as canonical. Each route now renders its own via <SeoHead>
+      (src/components/SeoHead.jsx), which is the single source of truth.
+      Keep this file to only the tags that are genuinely the same on every
+      route (robots, keywords, image, card type, etc).
+    -->
     <meta
       name="keywords"
       content="mock test generator, mocksy, online mock test, free mock test maker, question paper to test, GATE mock test, SSC mock test, UPSC mock test, exam practice test generator, PDF to test converter, timed test generator, auto grading test"
     />
     <meta name="author" content="Mocksy" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
-    <link rel="canonical" href="https://mocksy-app.vercel.app/" />
 
-    <!-- Open Graph / Facebook / LinkedIn / WhatsApp preview -->
+    <!-- Open Graph / Facebook / LinkedIn / WhatsApp preview (url/title/description set per-route by SeoHead) -->
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://mocksy-app.vercel.app/" />
-    <meta property="og:title" content="Mocksy – Free Mock Test Generator" />
-    <meta
-      property="og:description"
-      content="Turn any question paper into a timed, proctored, auto-graded mock test in seconds. Free online mock test generator for GATE, SSC, UPSC and more."
-    />
     <meta property="og:image" content="https://mocksy-app.vercel.app/logo512.png" />
     <meta property="og:site_name" content="Mocksy" />
 
-    <!-- Twitter / X card -->
+    <!-- Twitter / X card (url/title/description set per-route by SeoHead) -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:url" content="https://mocksy-app.vercel.app/" />
-    <meta name="twitter:title" content="Mocksy – Free Mock Test Generator" />
-    <meta
-      name="twitter:description"
-      content="Turn any question paper into a timed, proctored, auto-graded mock test in seconds. Free online mock test generator for GATE, SSC, UPSC and more."
-    />
     <meta name="twitter:image" content="https://mocksy-app.vercel.app/logo512.png" />
 
     <!-- Structured data so Google understands this is a free web app, not just a page -->

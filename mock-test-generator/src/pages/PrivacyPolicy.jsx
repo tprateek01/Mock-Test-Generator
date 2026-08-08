@@ -16,7 +16,14 @@ export default function PrivacyPolicy() {
   const t = PRIVACY_STRINGS[lang];
 
   return (
-    <MarketingLayout>
+    <MarketingLayout
+      seo={{
+        path: '/privacy',
+        title: 'Privacy Policy - Mocksy',
+        description:
+          'Read how Mocksy handles uploaded question papers and test data — what is processed, what is stored locally, and what never leaves your device.',
+      }}
+    >
       <div className="mt-marketing-page">
         <div className="mt-hero" style={{ padding: '2rem 0 1.5rem' }}>
           <span className="mt-hero-eyebrow"><ShieldCheck size={13} /> {t.eyebrow}</span>

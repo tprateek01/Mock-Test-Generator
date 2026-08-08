@@ -11,10 +11,15 @@
 import React from 'react';
 import SiteHeader from './SiteHeader';
 import SiteFooter from './SiteFooter';
+import SeoHead from './SeoHead';
 
-export default function MarketingLayout({ children }) {
+// seo: { title, description, path } — required so every page that uses this
+// layout (Home, Contact, Privacy) gets its own self-referencing canonical
+// tag instead of silently inheriting whatever was last set.
+export default function MarketingLayout({ children, seo }) {
   return (
     <div className="mt-app-shell">
+      {seo && <SeoHead {...seo} />}
       <SiteHeader showNav showInstall />
       <main className="mt-stage-area">
         {children}

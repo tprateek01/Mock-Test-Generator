@@ -17,7 +17,14 @@ export default function ContactUs() {
   const t = CONTACT_STRINGS[lang];
 
   return (
-    <MarketingLayout>
+    <MarketingLayout
+      seo={{
+        path: '/contact',
+        title: 'Contact Us - Mocksy',
+        description:
+          'Get in touch with the Mocksy team — questions, feedback, or bug reports about the free mock test generator.',
+      }}
+    >
       <div className="mt-marketing-page">
         <div className="mt-hero" style={{ padding: '2rem 0 1.5rem' }}>
           <span className="mt-hero-eyebrow"><MessageCircleQuestion size={13} /> {t.eyebrow}</span>

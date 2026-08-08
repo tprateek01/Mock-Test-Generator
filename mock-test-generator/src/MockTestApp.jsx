@@ -9,6 +9,7 @@ import {
 import { renderFigureImages } from './pdfFigures';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
+import SeoHead from './components/SeoHead';
 import { saveTestProgress, loadTestProgress, clearTestProgress } from './testProgress';
 import { useLanguage } from './i18n/LanguageContext';
 
@@ -3338,6 +3339,11 @@ export default function MockTestApp() {
 
   return (
     <div className="mt-app-shell">
+      <SeoHead
+        path="/create"
+        title="Create a Mock Test - Mocksy"
+        description="Upload a question paper (PDF, Word, image, or pasted text) and Mocksy turns it into a timed, proctored, auto-graded mock test in seconds."
+      />
       <SiteHeader showInstall={showChrome} showNav={showChrome} />
       <main className="mt-stage-area">
         {stage === 'upload' && (
