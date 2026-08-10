@@ -309,7 +309,7 @@ export default function GlobalStyles() {
         display: inline;
       }
       @media (max-width: 520px) {
-        .mt-install-btn { padding: 0.55rem 0.7rem; }
+        .mt-install-btn { padding: 0.7rem; }
         .mt-install-btn span.mt-install-btn-label { display: none; }
       }
 
@@ -534,7 +534,7 @@ export default function GlobalStyles() {
         font-weight: 600;
         color: var(--ink-soft);
         text-decoration: none;
-        padding: 0.3rem 0.1rem;
+        padding: 0.45rem 0.15rem;
         border-bottom: 2px solid transparent;
         transition: color 0.12s ease, border-color 0.12s ease;
       }
@@ -580,7 +580,7 @@ export default function GlobalStyles() {
       .mt-site-footer-person {
         display: inline-flex;
         align-items: center;
-        gap: 0.25rem;
+        gap: 0.75rem;
         font-size: 0.75rem;
         line-height: 1.3;
         color: var(--ink-faint);

@@ -113,9 +113,9 @@ export default function InstallAppButton() {
 
   return (
     <>
-      <button type="button" className="mt-btn mt-btn-brass mt-install-btn" onClick={handleClick}>
+      <button type="button" className="mt-btn mt-btn-brass mt-install-btn" onClick={handleClick} aria-label="Download App">
         <Download size={16} />
-        <span className="mt-install-btn-label">Download App</span>
+        <span className="mt-install-btn-label" aria-hidden="true">Download App</span>
       </button>
 
       {showIosHelp && (
