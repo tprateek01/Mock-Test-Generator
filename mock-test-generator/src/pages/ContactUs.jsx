@@ -35,7 +35,7 @@ export default function ContactUs() {
         <div className="mt-card mt-contact-card">
           <div className="mt-seal" style={{ flexShrink: 0 }}><Mail size={16} /></div>
           <div>
-            <h3>{t.emailTitle}</h3>
+            <h2>{t.emailTitle}</h2>
             <p>{t.emailDesc}</p>
             <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
           </div>
@@ -44,7 +44,7 @@ export default function ContactUs() {
         <div className="mt-card mt-contact-card">
           <div className="mt-seal" style={{ flexShrink: 0 }}><Code2 size={16} /></div>
           <div>
-            <h3>{t.githubTitle}</h3>
+            <h2>{t.githubTitle}</h2>
             <p>{t.githubDesc}</p>
             <a href={`${GITHUB_REPO}/issues`} target="_blank" rel="noopener noreferrer">{t.githubLinkText}</a>
           </div>

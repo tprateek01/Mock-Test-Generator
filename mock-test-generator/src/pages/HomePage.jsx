@@ -49,19 +49,19 @@ export default function HomePage() {
 
         <div className="mt-steps">
           <div className="mt-card mt-step">
-            <h3>{t.stepUploadTitle}</h3>
+            <h2>{t.stepUploadTitle}</h2>
             <p>{t.stepUploadDesc}</p>
           </div>
           <div className="mt-card mt-step">
-            <h3>{t.stepReviewTitle}</h3>
+            <h2>{t.stepReviewTitle}</h2>
             <p>{t.stepReviewDesc}</p>
           </div>
           <div className="mt-card mt-step">
-            <h3>{t.stepConfigureTitle}</h3>
+            <h2>{t.stepConfigureTitle}</h2>
             <p>{t.stepConfigureDesc}</p>
           </div>
           <div className="mt-card mt-step">
-            <h3>{t.stepTakeTitle}</h3>
+            <h2>{t.stepTakeTitle}</h2>
             <p>{t.stepTakeDesc}</p>
           </div>
         </div>
@@ -69,32 +69,32 @@ export default function HomePage() {
         <div className="mt-feature-grid">
           <div className="mt-card mt-feature-card">
             <div className="mt-seal"><FileText size={16} /></div>
-            <h3>{t.featFormatTitle}</h3>
+            <h2>{t.featFormatTitle}</h2>
             <p>{t.featFormatDesc}</p>
           </div>
           <div className="mt-card mt-feature-card">
             <div className="mt-seal"><ListChecks size={16} /></div>
-            <h3>{t.featEditTitle}</h3>
+            <h2>{t.featEditTitle}</h2>
             <p>{t.featEditDesc}</p>
           </div>
           <div className="mt-card mt-feature-card">
             <div className="mt-seal"><Timer size={16} /></div>
-            <h3>{t.featTimingTitle}</h3>
+            <h2>{t.featTimingTitle}</h2>
             <p>{t.featTimingDesc}</p>
           </div>
           <div className="mt-card mt-feature-card">
             <div className="mt-seal"><BarChart3 size={16} /></div>
-            <h3>{t.featNegTitle}</h3>
+            <h2>{t.featNegTitle}</h2>
             <p>{t.featNegDesc}</p>
           </div>
           <div className="mt-card mt-feature-card">
             <div className="mt-seal"><Calculator size={16} /></div>
-            <h3>{t.featCalcTitle}</h3>
+            <h2>{t.featCalcTitle}</h2>
             <p>{t.featCalcDesc}</p>
           </div>
           <div className="mt-card mt-feature-card">
             <div className="mt-seal"><Languages size={16} /></div>
-            <h3>{t.featLangTitle}</h3>
+            <h2>{t.featLangTitle}</h2>
             <p>{t.featLangDesc}</p>
           </div>
         </div>

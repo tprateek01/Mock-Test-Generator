@@ -1748,7 +1748,7 @@ function QuestionEditRow({ q, index, figures, onChange, onRemove, selectable, se
                   {isCorrect ? <Check size={11} style={{ color: 'var(--answered)' }} /> : null}
                 </button>
                 <input className="mt-input flex-1" placeholder={`Option ${i + 1}`} value={opt} onChange={(e) => updateOption(i, e.target.value)} />
-                <button className="text-xs" style={{ color: 'var(--ink-faint)' }} onClick={() => removeOption(i)}><X size={13} /></button>
+                <button className="text-xs" style={{ color: 'var(--ink-faint)' }} onClick={() => removeOption(i)} aria-label={`Remove option ${i + 1}`} title={`Remove option ${i + 1}`}><X size={13} /></button>
               </div>
             );
           })}
@@ -2654,7 +2654,7 @@ function TestScreen({ paper, config, onFinish }) {
             </div>
           </div>
           {!isDesktop && (
-            <button className="mt-btn mt-btn-ghost" onClick={() => setShowPaletteMobile(true)}><Layers size={16} /></button>
+            <button className="mt-btn mt-btn-ghost" onClick={() => setShowPaletteMobile(true)} aria-label="Open question palette" title="Open question palette"><Layers size={16} /></button>
           )}
         </div>
       </div>
@@ -2839,7 +2839,7 @@ function TestScreen({ paper, config, onFinish }) {
         <div className="fixed inset-0 z-40 flex justify-end" style={{ background: 'rgba(28,37,65,0.4)' }} onClick={() => setShowPaletteMobile(false)}>
           <div className="w-72 max-w-[85vw] h-full bg-white flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex-1 overflow-y-auto mt-scrollbar p-4">
-              <div className="flex justify-end mb-2"><button onClick={() => setShowPaletteMobile(false)}><X size={18} /></button></div>
+              <div className="flex justify-end mb-2"><button onClick={() => setShowPaletteMobile(false)} aria-label="Close question palette" title="Close question palette"><X size={18} /></button></div>
               <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} onGoto={() => setShowPaletteMobile(false)} />
             </div>
             <div className="flex-shrink-0 p-4 border-t mt-hairline">

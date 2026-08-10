@@ -25,7 +25,7 @@ export default function GlobalStyles() {
         --ink-soft: #4C567A;
         --ink-faint: #5B6488;
         --rule: #DCD5C2;
-        --brass: #A9822F;
+        --brass: #7A5C20;
         --brass-soft: #E8DCB8;
         --alert: #B23A2E;
         --alert-soft: #F4DEDA;
@@ -179,7 +179,8 @@ export default function GlobalStyles() {
         background: #fff;
         border: 1px solid var(--rule);
         border-radius: 999px;
-        padding: 0.4rem 0.75rem;
+        padding: 0.55rem 0.75rem;
+        min-height: 2rem;
         cursor: pointer;
         transition: filter 0.12s ease, transform 0.05s ease;
         flex-shrink: 0;
@@ -587,7 +588,10 @@ export default function GlobalStyles() {
       .mt-site-footer-person a {
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         color: var(--ink-soft);
+        padding: 0.5rem;
+        margin: -0.5rem;
       }
       .mt-site-footer-person a:hover { color: var(--ink); }
       .mt-site-footer-person svg { width: 12px; height: 12px; }
@@ -664,7 +668,7 @@ export default function GlobalStyles() {
         box-shadow: 0 6px 16px rgba(28,37,65,0.08);
       }
       .mt-feature-card .mt-seal { margin-bottom: 0.7rem; }
-      .mt-feature-card h3 {
+      .mt-feature-card h2 {
         font-size: 0.98rem;
         font-weight: 700;
         margin: 0 0 0.35rem;
@@ -715,7 +719,7 @@ export default function GlobalStyles() {
         display: flex; align-items: center; justify-content: center;
         box-shadow: 0 0 0 3px var(--paper);
       }
-      .mt-step h3 { font-size: 0.95rem; font-weight: 700; margin: 0.5rem 0 0.35rem; }
+      .mt-step h2 { font-size: 0.95rem; font-weight: 700; margin: 0.5rem 0 0.35rem; }
       .mt-step p { font-size: 0.83rem; color: var(--ink-soft); line-height: 1.5; margin: 0; }
 
       .mt-resume-banner {
@@ -759,7 +763,7 @@ export default function GlobalStyles() {
         padding: 1.1rem 1.2rem;
         margin-bottom: 0.9rem;
       }
-      .mt-contact-card h3 { font-size: 0.92rem; font-weight: 700; margin: 0 0 0.2rem; }
+      .mt-contact-card h2 { font-size: 0.92rem; font-weight: 700; margin: 0 0 0.2rem; }
       .mt-contact-card p { font-size: 0.85rem; color: var(--ink-soft); margin: 0; line-height: 1.5; }
       .mt-contact-card a { color: var(--brass); font-weight: 600; text-decoration: none; }
       .mt-contact-card a:hover { text-decoration: underline; }
@@ -778,7 +782,7 @@ export default function GlobalStyles() {
           flex-wrap: wrap;
           gap: 0.7rem 1rem;
         }
-        .mt-site-nav a { font-size: 0.78rem; padding: 0.1rem 0; }
+        .mt-site-nav a { font-size: 0.78rem; padding: 0.5rem 0.1rem; }
         .mt-site-footer { padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom, 0px)); }
         .mt-site-footer-inner { gap: 0.4rem; }
         .mt-site-footer a { font-size: 0.78rem; }
