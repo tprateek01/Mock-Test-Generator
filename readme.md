@@ -1,8 +1,15 @@
 # Mocksy — Mock Test Generator
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Live app](https://img.shields.io/badge/live-mocksy--app.vercel.app-2563eb)](https://mocksy-app.vercel.app)
+[![React](https://img.shields.io/badge/frontend-React%2019-61dafb)](mock-test-generator/package.json)
+[![Express](https://img.shields.io/badge/backend-Express%205-black)](server/package.json)
+
 Mocksy turns any question paper — a PDF, a Word doc, a photo of a printed sheet, or plain pasted text — into a timed, proctored, auto-graded mock test you can take right in your browser. It's built for students prepping for competitive exams (GATE, SSC, UPSC, banking, and similar) who want to practice under real exam conditions instead of just reading through a paper.
 
 **Live app:** https://mocksy-app.vercel.app
+
+![Mocksy homepage](mock-test-generator/public/screenshots/desktop-wide.png)
 
 ## How it works
 
@@ -51,6 +58,8 @@ Mock-Test-Generator/
 
 ## Getting started locally
 
+**Prerequisites:** Node.js 18+ (needed for native `fetch` used by the backend) and npm.
+
 ### 1. Frontend
 
 ```bash
@@ -94,6 +103,13 @@ Run these from inside `mock-test-generator/`:
 ## Deployment
 
 The frontend is deployed on [Vercel](https://vercel.com); see `mock-test-generator/vercel.json` for routing and caching rules. Set `GEMINI_API_KEY` (and `ALLOWED_ORIGIN`, pointed at your deployed frontend URL) as environment variables wherever you host `server/`.
+
+## Known limitations & troubleshooting
+
+- **Extraction quality depends on input quality.** Blurry photos, dense multi-column layouts, or handwritten papers may extract poorly — always review the extracted questions before starting a test (see step 2 above).
+- **Free-tier rate limits.** The backend proxies to Gemini's free tier and automatically falls back across a list of models (see `MODEL_FALLBACKS` in `server/server.js`) if one is overloaded or retired. If extraction stalls or fails outright, you may have hit the free-tier quota — wait a minute and retry, or use a paid Gemini key.
+- **Model names can go stale.** Google renames/retires Gemini models fairly often. If extraction starts failing across the board, check [ai.google.dev/gemini-api/docs/models](https://ai.google.dev/gemini-api/docs/models) and update `MODEL_FALLBACKS` in `server/server.js`.
+- **CORS in production.** If you deploy the backend and the frontend can't reach it, make sure `ALLOWED_ORIGIN` is set on the backend to your deployed frontend's exact URL.
 
 ## Team
 
