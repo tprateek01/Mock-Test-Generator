@@ -95,6 +95,25 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
+
+    <!-- Sets data-theme on <html> before React mounts / first paint, so
+         dark-mode users don't see a flash of the light theme on load. Keep
+         this in sync with the storage key and fallback logic in
+         src/i18n/ThemeContext.jsx (STORAGE_KEY = 'mocksy_theme'). -->
+    <script>
+      (function () {
+        try {
+          var saved = window.localStorage.getItem('mocksy_theme');
+          var theme = saved === 'dark' || saved === 'light'
+            ? saved
+            : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {
+          // localStorage/matchMedia can throw in some privacy modes — fall
+          // back to the light theme, same as ThemeContext.jsx would.
+        }
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

@@ -21,6 +21,7 @@ export default function GlobalStyles() {
       .mt-root {
         --paper: #FBF8F1;
         --paper-dim: #F2EDE1;
+        --surface: #FFFFFF;
         --ink: #1C2541;
         --ink-soft: #4C567A;
         --ink-faint: #5B6488;
@@ -38,12 +39,39 @@ export default function GlobalStyles() {
         font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
         min-height: 100%;
         width: 100%;
+        transition: background-color 0.15s ease, color 0.15s ease;
+      }
+
+      /* Dark theme — same "Hall Ticket" design language (paper, ink, brass
+         seal, answered/marked accents), re-tuned for contrast on a dark
+         background. Applied via data-theme="dark" on <html>, set by
+         ThemeContext.jsx (and, on first paint, by the inline script in
+         public/index.html so there's no flash of the light theme). Every
+         surface in the app is themed through these variables — see the
+         --surface additions below replacing hardcoded #fff — so this block
+         is the only place theme colors need to change. */
+      [data-theme='dark'] .mt-root {
+        --paper: #14161F;
+        --paper-dim: #1B1E29;
+        --surface: #1F2230;
+        --ink: #ECE8DC;
+        --ink-soft: #B9B6C9;
+        --ink-faint: #8B87A0;
+        --rule: #333750;
+        --brass: #D8AE55;
+        --brass-soft: #3A331C;
+        --alert: #E2685C;
+        --alert-soft: #3A211F;
+        --answered: #57B98A;
+        --answered-soft: #17301F;
+        --review: #A88BE0;
+        --review-soft: #2A2340;
       }
       .mt-serif { font-family: 'Source Serif 4', Georgia, serif; }
       .mt-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 
       .mt-card {
-        background: #fff;
+        background: var(--surface);
         border: 1px solid var(--rule);
         border-radius: 3px;
         box-shadow: 0 1px 0 rgba(28,37,65,0.03);
@@ -75,13 +103,13 @@ export default function GlobalStyles() {
       .mt-btn-danger:hover:not(:disabled) { background: var(--alert-soft); }
       .mt-btn-review { background: var(--review); color: #fff; }
       .mt-btn-review:hover:not(:disabled) { filter: brightness(1.1); }
-      .mt-btn-outline-accent { background: #fff; color: var(--review); border-color: var(--review); }
+      .mt-btn-outline-accent { background: var(--surface); color: var(--review); border-color: var(--review); }
       .mt-btn-outline-accent:hover:not(:disabled) { background: var(--review-soft); }
-      .mt-btn-outline-accent:disabled { background: #fff; }
+      .mt-btn-outline-accent:disabled { background: var(--surface); }
 
       .mt-input, .mt-textarea, .mt-select {
         font-family: 'IBM Plex Sans', sans-serif;
-        background: #fff;
+        background: var(--surface);
         border: 1px solid var(--rule);
         border-radius: 3px;
         padding: 0.55rem 0.7rem;
@@ -130,14 +158,14 @@ export default function GlobalStyles() {
         font-size: 0.85rem;
         border: 1.5px solid var(--rule);
         color: var(--ink-soft);
-        background: #fff;
+        background: var(--surface);
         cursor: pointer;
         transition: transform 0.08s ease;
         position: relative;
       }
       .mt-bubble:hover { transform: scale(1.06); }
       .mt-bubble.current { outline: 2px solid var(--ink); outline-offset: 2px; }
-      .mt-bubble.not-visited { background: #fff; border-color: var(--rule); color: var(--ink-faint); }
+      .mt-bubble.not-visited { background: var(--surface); border-color: var(--rule); color: var(--ink-faint); }
       .mt-bubble.not-answered { background: var(--alert-soft); border-color: var(--alert); color: var(--alert); }
       .mt-bubble.answered { background: var(--answered); border-color: var(--answered); color: #fff; }
       .mt-bubble.marked { background: var(--review); border-color: var(--review); color: #fff; }
@@ -176,7 +204,7 @@ export default function GlobalStyles() {
         font-size: 0.78rem;
         font-weight: 600;
         color: var(--ink-soft);
-        background: #fff;
+        background: var(--surface);
         border: 1px solid var(--rule);
         border-radius: 999px;
         padding: 0.55rem 0.75rem;
@@ -412,7 +440,7 @@ export default function GlobalStyles() {
         right: 0;
         width: 292px;
         max-width: calc(100vw - 2rem);
-        background: #fff;
+        background: var(--surface);
         border: 1px solid var(--rule);
         border-radius: 8px;
         box-shadow: 0 14px 34px rgba(28,37,65,0.28);
@@ -473,7 +501,7 @@ export default function GlobalStyles() {
       .mt-calc-btn {
         border: 1px solid var(--rule);
         border-radius: 6px;
-        background: #fff;
+        background: var(--surface);
         color: var(--ink);
         font-family: 'IBM Plex Mono', monospace;
         font-size: 0.95rem;

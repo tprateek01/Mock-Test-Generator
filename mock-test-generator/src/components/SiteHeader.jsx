@@ -11,13 +11,15 @@
 // LanguageContext so the choice carries across navigation.
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Languages } from 'lucide-react';
+import { Languages, Sun, Moon } from 'lucide-react';
 import InstallAppButton from './InstallAppButton';
 import { useLanguage } from '../i18n/LanguageContext';
+import { useTheme } from '../i18n/ThemeContext';
 import { NAV_STRINGS } from '../i18n/strings';
 
 export default function SiteHeader({ showInstall = false, showNav = true }) {
   const { lang, toggleLang } = useLanguage();
+  const { theme, toggleTheme } = useTheme();
   const t = NAV_STRINGS[lang];
 
   return (
@@ -40,6 +42,15 @@ export default function SiteHeader({ showInstall = false, showNav = true }) {
       )}
 
       <div className="mt-header-actions">
+        <button
+          type="button"
+          className="mt-lang-toggle"
+          onClick={toggleTheme}
+          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+        >
+          {theme === 'dark' ? <Moon size={13} /> : <Sun size={13} />}
+        </button>
         <button
           type="button"
           className="mt-lang-toggle"
