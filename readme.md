@@ -17,7 +17,7 @@ Mocksy turns any question paper — a PDF, a Word doc, a photo of a printed shee
 2. **Review** — Mocksy (via Google's Gemini API) extracts the questions and sections automatically. Nothing starts until you've reviewed and corrected the extraction, so mistakes never slip into your test.
 3. **Configure** — Set total-test, per-section, or per-question timing, and negative marking (including GATE-style fractional marking) to match the real exam.
 4. **Take it** — Sit the test with a live question palette, an optional in-test scientific calculator, and a locked, distraction-free layout.
-5. **Get scored** — Get an instant score breakdown and results chart the moment you submit.
+5. **Get scored** — Get an instant score breakdown and results chart the moment you submit. The score summary is also saved locally so you can revisit it later from the Past Attempts page.
 
 ## Features
 
@@ -27,6 +27,8 @@ Mocksy turns any question paper — a PDF, a Word doc, a photo of a printed shee
 - **Negative marking** — Configurable per question type.
 - **Optional calculator** — An in-test scientific calculator you can enable when the exam allows it.
 - **Bilingual** — The entire site, including the upload flow, is available in Hindi and English.
+- **Dark mode** — Follows your OS's light/dark setting by default; a toggle in the header lets you override it, remembered for next time.
+- **Local test history** — Every completed test's score is saved automatically (per browser/device, capped at the most recent 30) and viewable on the Past Attempts page — no login required.
 - **Installable PWA** — Installable as an app on desktop and mobile, with offline-friendly caching.
 - **Downloadable results** — Export your test and score as a PDF via `jsPDF`.
 
@@ -48,8 +50,9 @@ Mock-Test-Generator/
 ├── mock-test-generator/   # React frontend (the app itself)
 │   ├── src/
 │   │   ├── components/    # Header, footer, layout, shared UI
-│   │   ├── pages/         # Home, Privacy Policy, Contact Us
-│   │   ├── i18n/          # English/Hindi strings
+│   │   ├── pages/         # Home, Privacy Policy, Contact Us, Past Attempts
+│   │   ├── i18n/          # English/Hindi strings + light/dark theme context
+│   │   ├── testHistory.js   # Local (localStorage) past-attempts store
 │   │   └── MockTestApp.jsx  # Upload → Review → Configure → Take → Results flow
 │   └── public/
 └── server/                 # Express proxy for the Gemini API
@@ -110,6 +113,7 @@ The frontend is deployed on [Vercel](https://vercel.com); see `mock-test-generat
 - **Free-tier rate limits.** The backend proxies to Gemini's free tier and automatically falls back across a list of models (see `MODEL_FALLBACKS` in `server/server.js`) if one is overloaded or retired. If extraction stalls or fails outright, you may have hit the free-tier quota — wait a minute and retry, or use a paid Gemini key.
 - **Model names can go stale.** Google renames/retires Gemini models fairly often. If extraction starts failing across the board, check [ai.google.dev/gemini-api/docs/models](https://ai.google.dev/gemini-api/docs/models) and update `MODEL_FALLBACKS` in `server/server.js`.
 - **CORS in production.** If you deploy the backend and the frontend can't reach it, make sure `ALLOWED_ORIGIN` is set on the backend to your deployed frontend's exact URL.
+- **Past Attempts history is per-browser, not per-device or account.** It's stored in `localStorage`, capped at the most recent 30 attempts (oldest auto-removed). A different browser, a different device, or clearing site data all start with an empty history — there's no sync, since there's no account system.
 
 ## Team
 
