@@ -13,6 +13,7 @@ import { ThemeProvider } from './i18n/ThemeContext';
 // Splitting these cuts unused JS on "/" and speeds up first paint there.
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const ContactUs = lazy(() => import('./pages/ContactUs'));
+const PastAttemptsPage = lazy(() => import('./pages/PastAttemptsPage'));
 const MockTestApp = lazy(() => import('./MockTestApp'));
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/privacy" element={<PrivacyPolicy />} />
                 <Route path="/contact" element={<ContactUs />} />
+                <Route path="/history" element={<PastAttemptsPage />} />
                 {/* The actual tool: upload → review → configure → test → results */}
                 <Route path="/create" element={<MockTestApp />} />
                 {/* Unknown paths fall back to the home page rather than a dead end */}

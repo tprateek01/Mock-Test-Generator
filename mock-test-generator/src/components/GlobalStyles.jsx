@@ -796,6 +796,35 @@ export default function GlobalStyles() {
       .mt-contact-card a { color: var(--brass); font-weight: 600; text-decoration: none; }
       .mt-contact-card a:hover { text-decoration: underline; }
 
+      /* -------------------------------------------------------------
+         PAST ATTEMPTS — local test history table (src/pages/PastAttemptsPage.jsx).
+         Wrapped in .mt-card by the page itself; this just styles the
+         <table> so it uses the same tokens (--rule, --ink, --paper-dim)
+         as everything else, instead of browser table defaults.
+         ------------------------------------------------------------- */
+      .mt-history-table-wrap { overflow-x: auto; }
+      .mt-history-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+      .mt-history-table th, .mt-history-table td {
+        padding: 0.65rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid var(--rule);
+        white-space: nowrap;
+      }
+      .mt-history-table th {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--ink-faint);
+        font-weight: 600;
+      }
+      .mt-history-table tbody tr:last-child td { border-bottom: none; }
+      .mt-history-table tbody tr:hover { background: var(--paper-dim); }
+      .mt-history-empty {
+        text-align: center;
+        padding: 3rem 1.5rem;
+        color: var(--ink-soft);
+      }
+
       @media (max-width: 640px) {
         .mt-site-header {
           flex-wrap: wrap;

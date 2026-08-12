@@ -36,6 +36,7 @@ export default function SiteHeader({ showInstall = false, showNav = true }) {
         <nav className="mt-site-nav">
           <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>{t.home}</NavLink>
           <NavLink to="/create" className={({ isActive }) => (isActive ? 'active' : '')}>{t.createTest}</NavLink>
+          <NavLink to="/history" className={({ isActive }) => (isActive ? 'active' : '')}>{t.history}</NavLink>
           <NavLink to="/contact" className={({ isActive }) => (isActive ? 'active' : '')}>{t.contact}</NavLink>
           <NavLink to="/privacy" className={({ isActive }) => (isActive ? 'active' : '')}>{t.privacy}</NavLink>
         </nav>

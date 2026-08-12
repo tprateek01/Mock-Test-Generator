@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useRef, useReducer, useMemo, Suspense, lazy } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Upload, FileText, ClipboardPaste, Clock, Flag,
   ChevronLeft, ChevronRight, AlertTriangle, X, Plus, Trash2, Pencil,
   Play, RotateCcw, Loader2, ListChecks, Timer,
   BarChart3, Layers, ArrowRight, Check, Calculator, Delete,
-  FileDown, Link2, Unlink, Shuffle
+  FileDown, Link2, Unlink, Shuffle, History
 } from 'lucide-react';
 import { renderFigureImages } from './pdfFigures';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
 import SeoHead from './components/SeoHead';
 import { saveTestProgress, loadTestProgress, clearTestProgress } from './testProgress';
+import { addTestHistoryEntry } from './testHistory';
 import { useLanguage } from './i18n/LanguageContext';
 
 /* ------------------------------------------------------------
@@ -1330,7 +1332,7 @@ function UploadScreen({ onExtracted, onStatusChange }) {
         {mode === 'file' ? (
           <div
             className="mt-card p-8 text-center cursor-pointer"
-            style={{ borderStyle: 'dashed', borderColor: dragOver ? 'var(--brass)' : 'var(--rule)', background: dragOver ? 'var(--paper-dim)' : '#fff' }}
+            style={{ borderStyle: 'dashed', borderColor: dragOver ? 'var(--brass)' : 'var(--rule)', background: dragOver ? 'var(--paper-dim)' : 'var(--surface)' }}
             onClick={() => inputRef.current?.click()}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
@@ -2632,7 +2634,7 @@ function TestScreen({ paper, config, onFinish }) {
   return (
     <div className="mt-viewport-fixed">
       {/* Header */}
-      <div className="border-b mt-hairline px-3 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-2 md:gap-3 flex-shrink-0" style={{ background: '#fff' }}>
+      <div className="border-b mt-hairline px-3 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-2 md:gap-3 flex-shrink-0" style={{ background: 'var(--surface)' }}>
         <div className="min-w-0">
           <div className="mt-serif font-semibold text-sm md:text-base truncate">{paper.title}</div>
           <div className="text-xs truncate" style={{ color: 'var(--ink-soft)' }}>{paper.sections.length > 1 ? `${q.sectionName} · ` : ''}Q{state.currentIndex + 1} of {state.flatQuestions.length}</div>
@@ -2708,7 +2710,7 @@ function TestScreen({ paper, config, onFinish }) {
                             className="mt-btn"
                             style={{
                               padding: '0.25rem 0.55rem', fontSize: '0.72rem',
-                              background: isCurrent ? 'var(--ink)' : (isCounted ? 'var(--answered)' : '#fff'),
+                              background: isCurrent ? 'var(--ink)' : (isCounted ? 'var(--answered)' : 'var(--surface)'),
                               color: isCurrent || isCounted ? '#fff' : 'var(--ink-soft)',
                               border: '1px solid ' + (isCurrent ? 'var(--ink)' : (isCounted ? 'var(--answered)' : 'var(--rule)'))
                             }}
@@ -2807,7 +2809,7 @@ function TestScreen({ paper, config, onFinish }) {
             pinned at the bottom of the sidebar itself (not the question
             action bar), matching the reference layout. */}
         {isDesktop && (
-          <div className="w-72 border-l mt-hairline flex flex-col" style={{ background: '#fff' }}>
+          <div className="w-72 border-l mt-hairline flex flex-col" style={{ background: 'var(--surface)' }}>
             <div className="flex-1 overflow-y-auto mt-scrollbar p-4">
               <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} />
             </div>
@@ -2821,7 +2823,7 @@ function TestScreen({ paper, config, onFinish }) {
       {/* Bottom action bar — stays fixed at the bottom of the viewport; only the
           question panel above scrolls. Labels collapse to icons on narrow screens.
           Submit Test lives in the sidebar/palette drawer instead of here. */}
-      <div className="flex-shrink-0 border-t mt-hairline px-2.5 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-1.5 md:gap-2" style={{ background: '#fff' }}>
+      <div className="flex-shrink-0 border-t mt-hairline px-2.5 md:px-6 py-2.5 md:py-3 flex items-center justify-between gap-1.5 md:gap-2" style={{ background: 'var(--surface)' }}>
         <div className="flex items-center gap-1.5 md:gap-2">
           <button className="mt-btn mt-btn-ghost" onClick={() => dispatch({ type: 'PREV' })} disabled={state.currentIndex === 0}><ChevronLeft size={15} /> <span className="hidden sm:inline">Previous</span></button>
           <button className="mt-btn mt-btn-outline-accent" onClick={() => { dispatch({ type: 'TOGGLE_MARK' }); dispatch({ type: 'NEXT' }); }} disabled={isLocked}><Flag size={14} /> <span className="hidden sm:inline">Mark for Review &amp; Next</span><span className="sm:hidden">Mark</span></button>
@@ -2837,7 +2839,7 @@ function TestScreen({ paper, config, onFinish }) {
 
       {!isDesktop && showPaletteMobile && (
         <div className="fixed inset-0 z-40 flex justify-end" style={{ background: 'rgba(28,37,65,0.4)' }} onClick={() => setShowPaletteMobile(false)}>
-          <div className="w-72 max-w-[85vw] h-full bg-white flex flex-col" onClick={(e) => e.stopPropagation()}>
+          <div className="w-72 max-w-[85vw] h-full flex flex-col" style={{ background: 'var(--surface)' }} onClick={(e) => e.stopPropagation()}>
             <div className="flex-1 overflow-y-auto mt-scrollbar p-4">
               <div className="flex justify-end mb-2"><button onClick={() => setShowPaletteMobile(false)} aria-label="Close question palette" title="Close question palette"><X size={18} /></button></div>
               <PaletteContent state={state} dispatch={dispatch} counts={counts} sections={sectionsForPalette} onGoto={() => setShowPaletteMobile(false)} />
@@ -3176,6 +3178,31 @@ function ResultsScreen({ state, onRestart }) {
   const [filter, setFilter] = useState('all');
   const [downloading, setDownloading] = useState(false);
 
+  // Records this attempt into the local "past attempts" list exactly once
+  // per completed test. The guard ref matters because React 18 StrictMode
+  // (dev only) runs effects twice, which would otherwise double-save every
+  // attempt. We only store lightweight summary numbers here — never the
+  // question paper or answers — see testHistory.js.
+  const historySavedRef = useRef(false);
+  useEffect(() => {
+    if (historySavedRef.current) return;
+    historySavedRef.current = true;
+    const timeUsedSeconds = Math.max(0, state.config.totalMinutes * 60 - state.overallRemaining);
+    addTestHistoryEntry({
+      savedAt: Date.now(),
+      title: state.paper.title,
+      obtained: grade.obtained,
+      maxObjective: grade.maxObjective,
+      correctCount: grade.correctCount,
+      wrongCount: grade.wrongCount,
+      unansweredObjective: grade.unansweredObjective,
+      totalQuestions: state.flatQuestions.length,
+      timeUsedSeconds,
+      totalMinutes: state.config.totalMinutes,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleDownload = async () => {
     setDownloading(true);
     try {
@@ -3298,6 +3325,7 @@ function ResultsScreen({ state, onRestart }) {
           {downloading ? <Loader2 size={15} className="mt-pulse" /> : <FileDown size={15} />}
           {downloading ? 'Preparing report…' : 'Download report'}
         </button>
+        <Link to="/history" className="mt-btn mt-btn-ghost" style={{ textDecoration: 'none' }}><History size={15} /> Past attempts</Link>
         <button className="mt-btn mt-btn-brass" onClick={onRestart}><RotateCcw size={15} /> Start another mock test</button>
       </div>
     </div>

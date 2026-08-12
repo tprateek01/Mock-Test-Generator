@@ -23,8 +23,8 @@ export function interpolate(template, nodesByToken) {
 }
 
 export const NAV_STRINGS = {
-  en: { home: 'Home', createTest: 'Create a test', contact: 'Contact', privacy: 'Privacy' },
-  hi: { home: 'होम', createTest: 'टेस्ट बनाएं', contact: 'संपर्क करें', privacy: 'गोपनीयता' },
+  en: { home: 'Home', createTest: 'Create a test', history: 'Past attempts', contact: 'Contact', privacy: 'Privacy' },
+  hi: { home: 'होम', createTest: 'टेस्ट बनाएं', history: 'पिछले प्रयास', contact: 'संपर्क करें', privacy: 'गोपनीयता' },
 };
 
 export const FOOTER_STRINGS = {
@@ -204,5 +204,46 @@ export const CONTACT_STRINGS = {
     githubDesc: 'बग रिपोर्ट करने या फ़ीचर मांगने का सबसे तेज़ तरीका — सोर्स कोड ओपन है।',
     githubLinkText: 'GitHub पर इशू खोलें',
     footerNote: 'Mocksy एक मुफ़्त, स्वतंत्र रूप से चलाया जाने वाला टूल है जिसमें कोई सपोर्ट टीम हाज़िर नहीं बैठी है, इसलिए जवाब आने में थोड़ा समय लग सकता है — लेकिन हर मैसेज पढ़ा जाता है।',
+  },
+};
+
+export const HISTORY_STRINGS = {
+  en: {
+    eyebrow: 'Local · this device only',
+    title: 'Past attempts',
+    intro: 'Every mock test you finish is saved here automatically — right in this browser, on this device. Nothing is uploaded, and there is no account to sync it anywhere else.',
+    countNote: (n, max) => `Showing ${n} of the last ${max} attempts. Once you're past ${max}, the oldest attempt is removed automatically to make room for the newest.`,
+    emptyTitle: 'No attempts yet',
+    emptyDesc: "Finish a mock test and it'll show up here.",
+    emptyCta: 'Create a test',
+    clearBtn: 'Clear history',
+    clearConfirm: 'Delete all saved attempts on this device? This cannot be undone.',
+    colDate: 'Date',
+    colTest: 'Test',
+    colScore: 'Score',
+    colCorrect: 'Correct',
+    colWrong: 'Wrong',
+    colUnanswered: 'Unanswered',
+    colTime: 'Time used',
+    notGraded: '—',
+  },
+  hi: {
+    eyebrow: 'लोकल · सिर्फ़ इस डिवाइस पर',
+    title: 'पिछले प्रयास',
+    intro: 'आपके द्वारा पूरा किया गया हर मॉक टेस्ट यहाँ अपने आप सेव हो जाता है — इसी ब्राउज़र में, इसी डिवाइस पर। कुछ भी अपलोड नहीं होता, और इसे कहीं और सिंक करने के लिए कोई अकाउंट नहीं है।',
+    countNote: (n, max) => `पिछले ${max} में से ${n} प्रयास दिखाए जा रहे हैं। ${max} से ज़्यादा होने पर, नए के लिए जगह बनाने हेतु सबसे पुराना प्रयास अपने आप हट जाता है।`,
+    emptyTitle: 'अभी तक कोई प्रयास नहीं',
+    emptyDesc: 'एक मॉक टेस्ट पूरा करें और यह यहाँ दिखने लगेगा।',
+    emptyCta: 'टेस्ट बनाएं',
+    clearBtn: 'इतिहास साफ़ करें',
+    clearConfirm: 'इस डिवाइस पर सेव किए गए सभी प्रयास हटाएं? यह वापस नहीं किया जा सकता।',
+    colDate: 'तारीख़',
+    colTest: 'टेस्ट',
+    colScore: 'स्कोर',
+    colCorrect: 'सही',
+    colWrong: 'गलत',
+    colUnanswered: 'अनुत्तरित',
+    colTime: 'समय लगा',
+    notGraded: '—',
   },
 };
