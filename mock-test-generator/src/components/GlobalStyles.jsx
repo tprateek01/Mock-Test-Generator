@@ -1,12 +1,11 @@
 // GlobalStyles.jsx
-// Extracted from MockTestApp.jsx so the design-system CSS (the 
-// "Hall Ticket" theme: paper ivory background, exam-ink navy, brass
-// seal accent) can be shared by the exam-flow screens AND the new
+// Extracted from MockTestApp.jsx so the design-system CSS (cool grey paper,
+// charcoal ink, burnt-orange accent) can be shared by the exam-flow screens AND the new
 // marketing pages (Home / Privacy / Contact) without duplicating it.
 import React from 'react';
 
 /* ============================================================
-   GLOBAL STYLE — "Hall Ticket" design language
+   GLOBAL STYLE — exam-paper design language
    Paper ivory background, exam-ink navy, brass seal accent,
    mono digits for the clock, serif for headers.
    ============================================================ */
@@ -19,21 +18,21 @@ export default function GlobalStyles() {
          which was blocking first paint and hurting mobile Performance. */
 
       .mt-root {
-        --paper: #FBF8F1;
-        --paper-dim: #F2EDE1;
+        --paper: #F3F4F1;
+        --paper-dim: #E7E9E4;
         --surface: #FFFFFF;
-        --ink: #1C2541;
-        --ink-soft: #4C567A;
-        --ink-faint: #5B6488;
-        --rule: #DCD5C2;
-        --brass: #7A5C20;
-        --brass-soft: #E8DCB8;
-        --alert: #B23A2E;
-        --alert-soft: #F4DEDA;
-        --answered: #2F6F4E;
-        --answered-soft: #DCEBE1;
-        --review: #6E4C9E;
-        --review-soft: #E7DEF3;
+        --ink: #1E2428;
+        --ink-soft: #444E54;
+        --ink-faint: #59646A;
+        --rule: #D2D7D2;
+        --brass: #B04A1C;
+        --brass-soft: #F3DDD0;
+        --alert: #B3203F;
+        --alert-soft: #F6DCE1;
+        --answered: #2A7A4B;
+        --answered-soft: #D9ECE0;
+        --review: #2F5DA8;
+        --review-soft: #DDE6F5;
         background: var(--paper);
         color: var(--ink);
         font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
@@ -42,7 +41,7 @@ export default function GlobalStyles() {
         transition: background-color 0.15s ease, color 0.15s ease;
       }
 
-      /* Dark theme — same "Hall Ticket" design language (paper, ink, brass
+      /* Dark theme — same exam-paper design language (paper, ink, brass
          seal, answered/marked accents), re-tuned for contrast on a dark
          background. Applied via data-theme="dark" on <html>, set by
          ThemeContext.jsx (and, on first paint, by the inline script in
@@ -51,22 +50,29 @@ export default function GlobalStyles() {
          --surface additions below replacing hardcoded #fff — so this block
          is the only place theme colors need to change. */
       [data-theme='dark'] .mt-root {
-        --paper: #14161F;
-        --paper-dim: #1B1E29;
-        --surface: #1F2230;
-        --ink: #ECE8DC;
-        --ink-soft: #B9B6C9;
-        --ink-faint: #8B87A0;
-        --rule: #333750;
-        --brass: #D8AE55;
-        --brass-soft: #3A331C;
-        --alert: #E2685C;
-        --alert-soft: #3A211F;
-        --answered: #57B98A;
+        --paper: #121517;
+        --paper-dim: #1A1F22;
+        --surface: #1F2528;
+        --ink: #E8ECEA;
+        --ink-soft: #B2BBB8;
+        --ink-faint: #8A9592;
+        --rule: #333C40;
+        --brass: #EE9255;
+        --brass-soft: #3B2A1E;
+        --alert: #F07589;
+        --alert-soft: #3B2128;
+        --answered: #5EC48D;
         --answered-soft: #17301F;
-        --review: #A88BE0;
-        --review-soft: #2A2340;
+        --review: #86AEEC;
+        --review-soft: #1E2B42;
       }
+      /* Light accent fills in dark mode need dark text to stay legible. */
+      [data-theme='dark'] .mt-btn-brass,
+      [data-theme='dark'] .mt-btn-review,
+      [data-theme='dark'] .mt-bubble.answered,
+      [data-theme='dark'] .mt-bubble.marked,
+      [data-theme='dark'] .mt-bubble.answered-marked { color: #101416; }
+
       .mt-serif { font-family: 'Source Serif 4', Georgia, serif; }
       .mt-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 
@@ -74,7 +80,7 @@ export default function GlobalStyles() {
         background: var(--surface);
         border: 1px solid var(--rule);
         border-radius: 3px;
-        box-shadow: 0 1px 0 rgba(28,37,65,0.03);
+        box-shadow: 0 1px 0 rgba(30,36,40,0.03);
       }
       .mt-hairline { border-color: var(--rule); }
 
@@ -283,7 +289,7 @@ export default function GlobalStyles() {
         border-radius: 50%;
         flex-shrink: 0;
         border: 2px solid var(--brass);
-        box-shadow: 0 2px 6px rgba(28,37,65,0.15);
+        box-shadow: 0 2px 6px rgba(30,36,40,0.15);
       }
       .mt-brand-name {
         font-family: 'Pacifico', cursive;
@@ -344,7 +350,7 @@ export default function GlobalStyles() {
       .mt-ios-help-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(28,37,65,0.45);
+        background: rgba(30,36,40,0.45);
         display: flex;
         align-items: flex-end;
         justify-content: center;
@@ -362,7 +368,7 @@ export default function GlobalStyles() {
         max-width: 26rem;
         width: 100%;
         padding: 1.25rem 1.35rem 1.5rem;
-        box-shadow: 0 12px 32px rgba(28,37,65,0.25);
+        box-shadow: 0 12px 32px rgba(30,36,40,0.25);
       }
       .mt-ios-help-title {
         font-family: 'Source Serif 4', Georgia, serif;
@@ -423,7 +429,7 @@ export default function GlobalStyles() {
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: 0 4px 12px rgba(28,37,65,0.25);
+        box-shadow: 0 4px 12px rgba(30,36,40,0.25);
         border: none;
         cursor: pointer;
         z-index: 60;
@@ -443,7 +449,7 @@ export default function GlobalStyles() {
         background: var(--surface);
         border: 1px solid var(--rule);
         border-radius: 8px;
-        box-shadow: 0 14px 34px rgba(28,37,65,0.28);
+        box-shadow: 0 14px 34px rgba(30,36,40,0.28);
         z-index: 60;
         overflow: hidden;
       }
@@ -693,7 +699,7 @@ export default function GlobalStyles() {
       }
       .mt-feature-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(28,37,65,0.08);
+        box-shadow: 0 6px 16px rgba(30,36,40,0.08);
       }
       .mt-feature-card .mt-seal { margin-bottom: 0.7rem; }
       .mt-feature-card h2 {
@@ -730,7 +736,7 @@ export default function GlobalStyles() {
       }
       .mt-step:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(28,37,65,0.08);
+        box-shadow: 0 6px 16px rgba(30,36,40,0.08);
       }
       .mt-step::before {
         counter-increment: mt-step;
